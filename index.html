@@ -33,6 +33,44 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #roomInput::placeholder{color:#8F7CC0}
 #roomCode{margin-top:14px;font-size:30px;font-weight:900;letter-spacing:8px;color:#FFD54F;min-height:36px}
 #roomStatus{margin-top:8px;font-size:14px;font-weight:600;color:#D8B4FE;min-height:20px}
+#lobby{width:100%;max-width:460px;margin:7vh auto 0;background:rgba(28,16,51,.82);border:1px solid rgba(168,85,247,.45);border-radius:28px;box-shadow:0 24px 60px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04) inset;padding:30px 24px 26px;text-align:center;backdrop-filter:blur(10px)}
+.lobbyCrown{font-size:52px;line-height:1;filter:drop-shadow(0 6px 14px rgba(255,213,79,.55))}
+#lobbyTitle{margin:10px 0 6px;font-size:30px;font-weight:900;letter-spacing:.5px}
+#lobbySub{margin:0 auto 18px;font-size:14px;color:#B9A8E8;line-height:1.5;max-width:330px}
+.codePanel{background:rgba(0,0,0,.3);border:1px solid rgba(168,85,247,.4);border-radius:18px;padding:14px 16px;text-align:left}
+.codeLabel{font-size:11px;font-weight:800;letter-spacing:3px;color:#B9A8E8;text-transform:uppercase}
+.codeRow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+#lobbyCode{font-size:34px;font-weight:900;letter-spacing:6px;color:#FFD54F}
+.copyBtn{width:46px;height:46px;min-width:46px;border-radius:12px;border:1px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);cursor:pointer;display:grid;place-items:center;font-family:inherit}
+#shareRoomBtn{margin-top:14px;width:100%;padding:15px;border:0;border-radius:16px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:17px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 10px 26px rgba(123,47,247,.45);display:flex;align-items:center;justify-content:center;gap:10px}
+.lobbyLbl{margin:24px 0 12px;font-size:16px;font-weight:800}
+#lobbyGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lslot{border-radius:18px;padding:14px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:7px;min-height:132px;justify-content:center;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05)}
+.lslot.empty{border:2px dashed rgba(255,255,255,.28);background:rgba(255,255,255,.03)}
+.lav{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;font-size:24px;font-weight:900;color:#fff;position:relative;box-shadow:inset -2px -3px 5px rgba(0,0,0,.3),inset 2px 3px 5px rgba(255,255,255,.35)}
+.crownBadge{position:absolute;top:-9px;right:-5px;font-size:18px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
+.lname{font-size:16px;font-weight:800;line-height:1.1}
+.lrow{display:flex;align-items:center;justify-content:center;gap:10px}
+.lpawn{width:28px;height:28px}
+.lpawn svg{width:100%;height:100%}
+.lpawn.dim{opacity:.35}
+.readyPill{display:inline-flex;align-items:center;gap:5px;background:#22C55E;color:#fff;font-size:12px;font-weight:800;padding:5px 11px;border-radius:999px}
+.lplus{width:52px;height:52px;border-radius:50%;border:2px dashed rgba(155,139,208,.7);display:grid;place-items:center}
+.lwait{font-size:13px;color:#B9A8E8;font-weight:600}
+#lobbyStatus{margin-top:12px;font-size:13px;font-weight:600;color:#D8B4FE;min-height:18px}
+.settingsPanel{margin-top:16px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 16px;text-align:left}
+.settingsPanel h4{margin:0 0 10px;font-size:15px;font-weight:800}
+.setRow{display:flex}
+.setCell{flex:1;text-align:center}
+.setCell+.setCell{border-left:1px solid rgba(255,255,255,.12)}
+.setCell .ic{font-size:19px}
+.setCell .k{font-size:11px;color:#B9A8E8;font-weight:700;margin-top:2px}
+.setCell .v{font-size:15px;font-weight:800;margin-top:2px}
+#lobbyStartBtn{margin-top:18px;width:100%;padding:17px;border:0;border-radius:18px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:19px;font-weight:900;letter-spacing:2px;cursor:pointer;font-family:inherit;box-shadow:0 12px 30px rgba(123,47,247,.5)}
+#lobbyStartBtn:disabled{opacity:.45;cursor:default;box-shadow:none}
+#lobbyWait{margin-top:10px;font-size:13px;font-weight:600;color:#D8B4FE;min-height:18px}
+#leaveRoomBtn{margin-top:12px;background:none;border:0;color:#F87171;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit}
+#turnTimerText.low{color:#F87171}
 .mini:disabled{opacity:.5;cursor:default}
 .mini{height:54px;padding:0 20px;border-radius:16px;border:2px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);font-size:15px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit}
 .mini.sel{background:linear-gradient(135deg,#7B2FF7,#A855F7);border-color:#C084FC}
@@ -277,11 +315,40 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     <button id="startBtn">START</button>
   </div>
 
+  <div id="lobby" class="hidden">
+    <div class="lobbyCrown">&#128081;</div>
+    <h2 id="lobbyTitle">Room Created!</h2>
+    <p id="lobbySub">Share the room code with your friends to join the game.</p>
+    <div class="codePanel">
+      <div class="codeLabel">Room Code</div>
+      <div class="codeRow">
+        <span id="lobbyCode"></span>
+        <button class="copyBtn" id="copyCodeBtn" aria-label="Copy room code"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+    </div>
+    <button id="shareRoomBtn"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>Share Room</button>
+    <div class="lobbyLbl">&#128101; 4 Players &ndash; Classic Ludo</div>
+    <div id="lobbyGrid"></div>
+    <div id="lobbyStatus"></div>
+    <div class="settingsPanel">
+      <h4>&#9881; Room Settings</h4>
+      <div class="setRow">
+        <div class="setCell"><div class="ic">&#127918;</div><div class="k">Mode</div><div class="v">Classic</div></div>
+        <div class="setCell"><div class="ic">&#128101;</div><div class="k">Players</div><div class="v">4</div></div>
+        <div class="setCell"><div class="ic">&#9203;</div><div class="k">Turn Time</div><div class="v">30s</div></div>
+      </div>
+    </div>
+    <button id="lobbyStartBtn">&#9654; Start Game</button>
+    <div id="lobbyWait"></div>
+    <button id="leaveRoomBtn">&#10005; Leave room</button>
+  </div>
+
   <div id="game" class="hidden">
     <div id="topRow">
       <button class="matchPill" id="homeBtn">Home</button>
       <div class="matchPill"><span class="ico">&#128101;</span><span id="matchLabel">4 Player Match</span></div>
       <div class="matchPill"><span class="ico">&#9201;</span><span id="timerText">00:00</span></div>
+      <div class="matchPill"><span class="ico">&#9203;</span><span id="turnTimerText">30s</span></div>
     </div>
     <div id="table">
       <div id="cardsLeft"></div>
@@ -342,8 +409,8 @@ var YARD_SLOTS={0:[[1.5,1.5],[1.5,3.5],[3.5,1.5],[3.5,3.5]],1:[[1.5,10.5],[1.5,1
 var ARROWS={"7,0":["\u2192",0],"0,7":["\u2193",1],"7,14":["\u2190",2],"14,7":["\u2191",3]};
 var FINISH=56, HOME_LEN=5;
 var $=function(id){return document.getElementById(id);};
-var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0;
-var pendingNames={}, hostName="", myName="", winHandledFor=null;
+var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
+var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
 var menuN=4, menuMode="together", hostConn=null, netAct=false;
 function playerSet(n){return n===2?[0,2]:(n===3?[0,1,2]:[0,1,2,3]);}
 function sanitizeName(v){return (v||"").replace(/^\s+|\s+$/g,"").slice(0,12);}
@@ -415,14 +482,17 @@ function goSetup(n,mode){
  updateStart();
  $("homeView").classList.add("hidden");
  $("game").classList.add("hidden");
+ $("lobby").classList.add("hidden");
  $("menu").classList.remove("hidden");
  window.scrollTo(0,0);
 }
 function showHome(){
  if(timerInt){clearInterval(timerInt);timerInt=null;}
+ stopTurnTimer();turnLeft=30;updateTurnTimerUI();
  state=null;
  $("game").classList.add("hidden");
  $("menu").classList.add("hidden");
+ $("lobby").classList.add("hidden");
  $("homeView").classList.remove("hidden");
  renderTopPlayers();
  window.scrollTo(0,0);
@@ -711,6 +781,30 @@ function startTimer(){
  $("timerText").textContent="00:00";
  timerInt=setInterval(function(){timerSec++;$("timerText").textContent=fmtTime(timerSec);},1000);
 }
+function updateTurnTimerUI(){
+ var el=$("turnTimerText"); if(!el){return;}
+ el.textContent=turnLeft+"s";
+ if(el.classList){el.classList.toggle("low",turnLeft<=10);}
+}
+function stopTurnTimer(){if(turnTimerInt){clearInterval(turnTimerInt);turnTimerInt=null;}}
+function resetTurnTimer(){
+ stopTurnTimer();
+ turnLeft=30;
+ updateTurnTimerUI();
+ if(!state||state.phase==="over"){return;}
+ turnTimerInt=setInterval(turnTick,1000);
+}
+function turnTick(){
+ if(!state||state.phase==="over"){stopTurnTimer();return;}
+ if(state.phase!=="roll"&&state.phase!=="move"){return;}
+ if(rolling){return;}
+ turnLeft--;
+ updateTurnTimerUI();
+ if(turnLeft<=0){
+  if(state.mode==="online"&&!isHost){stopTurnTimer();return;}
+  nextTurn();
+ }
+}
 function newGame(n,mode,names){
  state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),players:[]};
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
@@ -720,6 +814,7 @@ function newGame(n,mode,names){
  $("diceBox").innerHTML=diceFaceSVG(6);
  $("winOverlay").classList.add("hidden");
  startTimer();
+ resetTurnTimer();
 }
 function startGame(){
  var names=[];
@@ -733,6 +828,7 @@ function startGame(){
  }
  newGame(menuN,menuMode,names);
  $("menu").classList.add("hidden");
+ $("lobby").classList.add("hidden");
  $("homeView").classList.add("hidden");
  $("game").classList.remove("hidden");
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
@@ -755,11 +851,13 @@ function nextTurn(){
  state.movable=[];
  renderAll();
  broadcast();
+ resetTurnTimer();
 }
 async function rollDice(){
  if(!state||state.phase!=="roll"){return;}
  if(state.mode==="online"&&!isHost&&!netAct){sendToHost({type:"roll"});return;}
  if(state.mode==="online"&&mySeat!==state.turn&&!netAct){return;}
+ rolling=true;
  var btn=$("diceBox");
  btn.disabled=true;
  $("rollBtn").disabled=true;
@@ -777,12 +875,14 @@ async function rollDice(){
  if(state.movable.length===0){
   renderAll();
   await sleep(750);
+  rolling=false;
   nextTurn();
   return;
  }
  state.phase="move";
  renderAll();
  broadcast();
+ rolling=false;
 }
 function findVictim(absIdx,ownerSeat){
  if(SAFE[absIdx]){return null;}
@@ -869,7 +969,7 @@ async function applyMove(p,t){
   broadcast();
   return;
  }
- if(extra){state.phase="roll";state.movable=[];renderAll();broadcast();return;}
+ if(extra){state.phase="roll";state.movable=[];renderAll();broadcast();resetTurnTimer();return;}
  nextTurn();
 }
 function confetti(){
@@ -904,6 +1004,7 @@ function updateStart(){
   btn.disabled=false;
   btn.textContent="START";
  }
+ renderLobby();
 }
 function serialState(){
  return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
@@ -915,15 +1016,127 @@ function broadcast(){
 }
 function applyNetState(s){
  var had=!!state;
+ var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
  state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",players:s.players.map(function(p){return {steps:p.steps.slice()};})};
  if(!had){
   $("menu").classList.add("hidden");
+  $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
   buildBoard();
   buildPawns();
  }
  $("diceBox").innerHTML=diceFaceSVG(state.dice||6);
  renderAll();
+ if(!had||s.turn!==oldTurn||s.gameId!==oldGame||(s.phase==="roll"&&oldPhase!=="roll")){resetTurnTimer();}
+}
+
+var USER_PLUS_SVG='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9B8BD0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+function setLobbyStatus(t){var el=$("lobbyStatus");if(el){el.textContent=t||"";}}
+function lobbyPlayers(){
+ var out=[{seat:0,name:hostName||sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"")}];
+ conns.forEach(function(c){out.push({seat:c.seat,name:pendingNames[c.seat]||""});});
+ return out;
+}
+function showLobby(asHost){
+ $("menu").classList.add("hidden");
+ $("homeView").classList.add("hidden");
+ $("game").classList.add("hidden");
+ $("lobby").classList.remove("hidden");
+ $("lobbyTitle").textContent=asHost?"Room Created!":"Joined Room!";
+ $("lobbySub").textContent=asHost?"Share the room code with your friends to join the game.":"Waiting for the host to start the game.";
+ $("lobbyCode").textContent=roomCode;
+ setLobbyStatus("");
+ renderLobby();
+ window.scrollTo(0,0);
+}
+function renderLobby(){
+ var grid=$("lobbyGrid"); if(!grid){return;}
+ var filled={};
+ if(isHost){
+  lobbyPlayers().forEach(function(p){filled[p.seat]=p.name;});
+ }else{
+  guestLobby.forEach(function(p){filled[p.seat]=p.name;});
+ }
+ grid.innerHTML="";
+ for(var seat=0;seat<menuN;seat++){
+  var ci=playerSet(menuN)[seat];
+  var c=COLORS[ci];
+  var has=Object.prototype.hasOwnProperty.call(filled,seat);
+  var nm=has?(sanitizeName(filled[seat])||c.name):"";
+  var slot=document.createElement("div");
+  if(has){
+   slot.className="lslot filled";
+   slot.style.background=c.hex+"2E";
+   slot.style.borderColor=c.hex+"99";
+   var av=document.createElement("div"); av.className="lav"; av.style.background=c.hex;
+   av.textContent=nm.charAt(0).toUpperCase()||c.name.charAt(0);
+   if(seat===0){var cr=document.createElement("span"); cr.className="crownBadge"; cr.textContent="\uD83D\uDC51"; av.appendChild(cr);}
+   var nEl=document.createElement("div"); nEl.className="lname"; nEl.textContent=nm;
+   var row=document.createElement("div"); row.className="lrow";
+   var pw=document.createElement("div"); pw.className="lpawn"; pw.innerHTML=pawnSVG(c);
+   var rd=document.createElement("div"); rd.className="readyPill"; rd.textContent="\u2713 Ready";
+   row.appendChild(pw); row.appendChild(rd);
+   slot.appendChild(av); slot.appendChild(nEl); slot.appendChild(row);
+  }else{
+   slot.className="lslot empty";
+   var plus=document.createElement("div"); plus.className="lplus"; plus.innerHTML=USER_PLUS_SVG;
+   var wt=document.createElement("div"); wt.className="lwait"; wt.textContent="Waiting for Player...";
+   var pw2=document.createElement("div"); pw2.className="lpawn dim"; pw2.innerHTML=pawnSVG(c);
+   slot.appendChild(plus); slot.appendChild(wt); slot.appendChild(pw2);
+  }
+  grid.appendChild(slot);
+ }
+ var filledCount=Object.keys(filled).length;
+ var sb=$("lobbyStartBtn"), wEl=$("lobbyWait");
+ if(isHost){
+  sb.classList.remove("hidden");
+  var full=filledCount>=menuN;
+  sb.disabled=!full;
+  wEl.textContent=full?"":"Waiting for "+(menuN-filledCount)+" more player"+((menuN-filledCount)===1?"":"s")+"\u2026";
+ }else{
+  sb.classList.add("hidden");
+  wEl.textContent="Waiting for the host to start the game\u2026";
+ }
+}
+function broadcastLobby(){
+ if(!isHost||!peer||state){return;}
+ var msg={type:"lobby",players:lobbyPlayers()};
+ conns.forEach(function(c){try{c.conn.send(msg);}catch(e){}});
+}
+function copyText(txt,done){
+ function fallback(){
+  try{
+   var ta=document.createElement("textarea");
+   ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+   document.body.appendChild(ta); ta.select();
+   var ok=false;
+   try{ok=document.execCommand("copy");}catch(e){}
+   document.body.removeChild(ta);
+   done(!!ok);
+  }catch(e){done(false);}
+ }
+ if(navigator.clipboard&&navigator.clipboard.writeText){
+  var p=navigator.clipboard.writeText(txt);
+  if(p&&p.then){p.then(function(){done(true);},function(){fallback();});}
+  else{fallback();}
+ }else{fallback();}
+}
+function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode;}
+function leaveRoom(){
+ if(isHost&&conns.length){conns.forEach(function(c){try{c.conn.send({type:"host-left"});}catch(e){}});}
+ destroyPeer();
+ pendingNames={};
+ guestLobby=[];
+ hostName="";
+ myName="";
+ roomCode="";
+ resetCreateBtn();
+ resetJoinBtn();
+ $("roomCode").textContent="";
+ setRoomStatus("");
+ setLobbyStatus("");
+ $("lobby").classList.add("hidden");
+ showHome();
 }
 function sendToHost(msg){if(hostConn){try{hostConn.send(msg);}catch(e){}}}
 function makeCode(){
@@ -998,13 +1211,22 @@ function tryCreate(attempt){
   setRoomStatus("Room ready — share code "+roomCode);
   if(btn){btn.textContent="Created";btn.classList.add("sel");}
   updateStart();
+  showLobby(true);
+  broadcastLobby();
  });
  peer.on("connection",function(conn){
   conn.on("open",function(){
-   if(conns.length+1>=menuN){return;}
-   var seat=conns.length+1;
+   if(conns.length>=menuN-1){return;}
+   var seat=-1;
+   for(var s=1;s<menuN;s++){
+    var taken=false;
+    for(var i=0;i<conns.length;i++){if(conns[i].seat===s){taken=true;break;}}
+    if(!taken){seat=s;break;}
+   }
+   if(seat<0){return;}
    conns.push({conn:conn,seat:seat});
    conn.send({type:"welcome",seat:seat,n:menuN});
+   broadcastLobby();
    conn.on("data",function(msg){onGuestMsg(msg,seat);});
    conn.on("close",function(){onGuestLeft(seat);});
    updateStart();
@@ -1031,7 +1253,7 @@ function tryCreate(attempt){
  });
 }
 function onGuestMsg(msg,seat){
- if(msg&&msg.type==="hello"){pendingNames[seat]=sanitizeName(msg.name||"");return;}
+ if(msg&&msg.type==="hello"){pendingNames[seat]=sanitizeName(msg.name||"");renderLobby();broadcastLobby();return;}
  if(!state||state.mode!=="online"||!isHost){return;}
  if(msg.type==="roll"&&seat===state.turn){netAct=true;rollDice();netAct=false;}
  if(msg.type==="move"&&seat===state.turn&&state.phase==="move"){
@@ -1043,6 +1265,9 @@ function onGuestLeft(seat){
  var idx=-1;
  for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){idx=i;}}
  if(idx>=0){conns.splice(idx,1);}
+ delete pendingNames[seat];
+ renderLobby();
+ broadcastLobby();
  if(!state){updateStart();return;}
  state.left[seat]=true;
  state.players[seat].steps=[-2,-2,-2,-2];
@@ -1102,8 +1327,10 @@ function joinRoom(){
     failJoin("Could not find that room — the host may have left. Check the code and try again.");
    },15000);
    hostConn.on("data",function(msg){
-    if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();}
+    if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();renderLobby();}
     if(msg.type==="state"){applyNetState(msg.state);}
+    if(msg.type==="lobby"){guestLobby=msg.players||[];renderLobby();}
+    if(msg.type==="host-left"){setLobbyStatus("Host left the room");}
    });
    hostConn.on("open",function(){
     joined=true;
@@ -1111,10 +1338,14 @@ function joinRoom(){
     if(btn){btn.disabled=false;btn.textContent="Join";}
     $("joinBtn").classList.add("sel");
     setRoomStatus("Joined room");
+    showLobby(false);
     try{hostConn.send({type:"hello",name:myName});}catch(e){}
    });
    hostConn.on("error",function(){
     failJoin("Could not find that room — check the code and try again.");
+   });
+   hostConn.on("close",function(){
+    if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}
    });
   });
  });
@@ -1140,6 +1371,26 @@ document.querySelectorAll("#modePills .pill").forEach(function(b){
 });
 $("createBtn").addEventListener("click",createRoom);
 $("joinBtn").addEventListener("click",joinRoom);
+$("lobbyStartBtn").addEventListener("click",function(){if(!isHost){return;}startGame();});
+$("copyCodeBtn").addEventListener("click",function(){
+ if(!roomCode){return;}
+ copyText(roomCode,function(ok){
+  if(ok){setLobbyStatus("Code copied \u2713");setTimeout(function(){if($("lobbyStatus").textContent==="Code copied \u2713"){setLobbyStatus("");}},1500);}
+  else{setLobbyStatus("Could not copy — long-press the code to copy it.");}
+ });
+});
+$("shareRoomBtn").addEventListener("click",function(){
+ if(!roomCode){return;}
+ var link=inviteLink();
+ if(navigator.share){
+  try{var r=navigator.share({title:"Ludo Room",text:"Join my Ludo room! Code: "+roomCode,url:link});if(r&&r.catch){r.catch(function(){});}}catch(e){}
+ }else{
+  copyText(link,function(ok){
+   setLobbyStatus(ok?"Link copied — send it to your friends.":"Copy this link: "+link);
+  });
+ }
+});
+$("leaveRoomBtn").addEventListener("click",leaveRoom);
 $("startBtn").addEventListener("click",function(){
  if(menuMode==="online"&&!isHost){return;}
  startGame();
@@ -1189,7 +1440,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
   $("roomInput").value=m[1].toUpperCase();
  }
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin};
+window.__ludo={get state(){return state;},set state(v){state=v;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;}};
 })();
 </script>
 </body>
