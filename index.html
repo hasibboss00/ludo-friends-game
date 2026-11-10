@@ -32,6 +32,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #roomInput:focus{border-color:#C084FC}
 #roomInput::placeholder{color:#8F7CC0}
 #roomCode{margin-top:14px;font-size:30px;font-weight:900;letter-spacing:8px;color:#FFD54F;min-height:36px}
+#roomStatus{margin-top:8px;font-size:14px;font-weight:600;color:#D8B4FE;min-height:20px}
+.mini:disabled{opacity:.5;cursor:default}
 .mini{height:54px;padding:0 20px;border-radius:16px;border:2px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);font-size:15px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit}
 .mini.sel{background:linear-gradient(135deg,#7B2FF7,#A855F7);border-color:#C084FC}
 #game{width:100%}
@@ -185,8 +187,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
         <button class="navBtn sel" data-nav="home">Home</button>
         <button class="navBtn" data-nav="play">Play</button>
         <button class="navBtn" data-nav="leaderboard">Leaderboard</button>
-        <button class="navBtn" data-nav="how">How to Play</button>
-        <button class="navBtn" data-nav="support">Support</button>
       </nav>
     </header>
     <section id="hero">
@@ -196,7 +196,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
         <p class="heroSub">Enjoy classic Ludo with a modern gaming experience. Play with friends or match with new players anytime.</p>
         <div class="heroBtns">
           <button id="playNowBtn">&#9654; Play Now</button>
-          <button class="ghostBtn" id="heroHowBtn">How to Play</button>
         </div>
       </div>
       <div id="heroVisual">
@@ -272,6 +271,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
         <button class="mini" id="joinBtn">Join</button>
       </div>
       <div id="roomCode"></div>
+      <div id="roomStatus"></div>
     </div>
     <button id="backBtn" class="backBtn">&larr; Home</button>
     <button id="startBtn">START</button>
@@ -312,8 +312,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     </div>
   </div>
 </div>
-<div id="howOverlay" class="overlay hidden"><div class="ovCard"><h3>How to Play</h3><p>Roll a 6 to move a token out of your yard.</p><p>Roll a 6 to roll again. Land on an opponent to send their token home.</p><p>Star cells are safe. First to bring all 4 tokens home wins.</p><button class="ovClose">Close</button></div></div>
-<div id="supportOverlay" class="overlay hidden"><div class="ovCard"><h3>Support</h3><p>Built for friends &mdash; no account needed.</p><button class="ovClose">Close</button></div></div>
 <audio id="sndFirst6" src="hello-sulululu_0_7j54.mp3" preload="auto"></audio>
 <audio id="sndKill" src="rag-korla_1_nz6g.mp3" preload="auto"></audio>
 <script>
@@ -429,7 +427,6 @@ function showHome(){
  renderTopPlayers();
  window.scrollTo(0,0);
 }
-function openOverlay(id){var ov=$(id);if(ov){ov.classList.remove("hidden");}}
 function buildHeroBoard(){
  var hb=$("heroCells"); if(!hb){return;}
  hb.innerHTML="";
@@ -934,16 +931,56 @@ function makeCode(){
  for(var i=0;i<6;i++){out+=chars[Math.floor(Math.random()*chars.length)];}
  return out;
 }
+function setRoomStatus(t){var el=$("roomStatus");if(el){el.textContent=t||"";}}
+function destroyPeer(){
+ if(peer){try{peer.destroy();}catch(e){}}
+ peer=null;conns=[];hostConn=null;isHost=false;mySeat=-1;
+}
+function resetCreateBtn(){
+ var b=$("createBtn");if(b){b.disabled=false;b.textContent="Create";b.classList.remove("sel");}
+}
+function resetJoinBtn(){
+ var b=$("joinBtn");if(b){b.disabled=false;b.textContent="Join";b.classList.remove("sel");}
+}
+function ensurePeer(cb){
+ if(typeof Peer!=="undefined"){cb(true);return;}
+ var s=document.createElement("script");
+ s.src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
+ var done=false;
+ function fin(ok){if(done){return;}done=true;cb(ok);}
+ s.onload=function(){fin(typeof Peer!=="undefined");};
+ s.onerror=function(){fin(false);};
+ (document.head||document.documentElement).appendChild(s);
+}
 function createRoom(){
- if(typeof Peer==="undefined"){return;}
+ var btn=$("createBtn");
+ destroyPeer();
+ $("roomCode").textContent="";
+ setRoomStatus("");
+ if(btn){btn.disabled=true;btn.textContent="Creating…";}
+ setRoomStatus("Creating room…");
  hostName=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
  try{localStorage.setItem("ludoLastName",hostName);}catch(e){}
+ ensurePeer(function(ok){
+  if(!ok){
+   resetCreateBtn();
+   setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
+   updateStart();
+   return;
+  }
+  tryCreate(0);
+ });
+}
+function tryCreate(attempt){
+ var btn=$("createBtn");
  roomCode=makeCode();
+ setRoomStatus("Creating room…");
  peer=new Peer("ludo-"+roomCode);
  peer.on("open",function(){
   isHost=true;mySeat=0;
   $("roomCode").textContent=roomCode;
-  $("createBtn").classList.add("sel");
+  setRoomStatus("Room ready — share code "+roomCode);
+  if(btn){btn.textContent="Created";btn.classList.add("sel");}
   updateStart();
  });
  peer.on("connection",function(conn){
@@ -956,6 +993,24 @@ function createRoom(){
    conn.on("close",function(){onGuestLeft(seat);});
    updateStart();
   });
+ });
+ peer.on("error",function(err){
+  var type=err&&err.type;
+  if(type==="unavailable-id"&&attempt===0){
+   try{peer.destroy();}catch(e){}
+   peer=null;
+   tryCreate(1);
+   return;
+  }
+  destroyPeer();
+  resetCreateBtn();
+  setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
+  updateStart();
+ });
+ peer.on("disconnected",function(){
+  setRoomStatus("Connection lost — tap Create again.");
+  resetCreateBtn();
+  updateStart();
  });
 }
 function onGuestMsg(msg,seat){
@@ -979,20 +1034,62 @@ function onGuestLeft(seat){
  updateStart();
 }
 function joinRoom(){
- if(typeof Peer==="undefined"){return;}
+ var btn=$("joinBtn");
+ var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+ if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
+ destroyPeer();
+ $("roomCode").textContent="";
+ setRoomStatus("");
  myName=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
  try{localStorage.setItem("ludoLastName",myName);}catch(e){}
- var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
- if(code.length!==6){return;}
  roomCode=code;
- peer=new Peer();
- peer.on("open",function(){
-  hostConn=peer.connect("ludo-"+code);
-  hostConn.on("data",function(msg){
-   if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();}
-   if(msg.type==="state"){applyNetState(msg.state);}
+ if(btn){btn.disabled=true;btn.textContent="Joining…";}
+ setRoomStatus("Joining…");
+ ensurePeer(function(ok){
+  if(!ok){
+   resetJoinBtn();
+   setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
+   updateStart();
+   return;
+  }
+  setRoomStatus("Joining…");
+  var joined=false;
+  peer=new Peer();
+  function failJoin(msg){
+   if(joined){return;}
+   destroyPeer();
+   resetJoinBtn();
+   setRoomStatus(msg);
+   updateStart();
+  }
+  peer.on("error",function(err){
+   var type=err&&err.type;
+   if(type==="peer-unavailable"){
+    failJoin("Could not find that room — check the code and try again.");
+   }else{
+    failJoin("Could not reach the game server — check your internet and tap Create again.");
+   }
   });
-  hostConn.on("open",function(){$("joinBtn").classList.add("sel");try{hostConn.send({type:"hello",name:myName});}catch(e){}});
+  peer.on("disconnected",function(){
+   if(!joined){failJoin("Connection lost — tap Create again.");}
+  });
+  peer.on("open",function(){
+   hostConn=peer.connect("ludo-"+code);
+   hostConn.on("data",function(msg){
+    if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();}
+    if(msg.type==="state"){applyNetState(msg.state);}
+   });
+   hostConn.on("open",function(){
+    joined=true;
+    if(btn){btn.disabled=false;btn.textContent="Join";}
+    $("joinBtn").classList.add("sel");
+    setRoomStatus("Joined room");
+    try{hostConn.send({type:"hello",name:myName});}catch(e){}
+   });
+   hostConn.on("error",function(){
+    failJoin("Could not find that room — check the code and try again.");
+   });
+  });
  });
 }
 document.querySelectorAll("#countPills .pill").forEach(function(b){
@@ -1042,7 +1139,6 @@ renderNameInputs();
 $("backBtn").addEventListener("click",showHome);
 $("homeBtn").addEventListener("click",showHome);
 $("playNowBtn").addEventListener("click",function(){goSetup(4,"together");});
-$("heroHowBtn").addEventListener("click",function(){openOverlay("howOverlay");});
 document.querySelectorAll("[data-nav]").forEach(function(b){
  b.addEventListener("click",function(){
   var k=b.getAttribute("data-nav");
@@ -1050,8 +1146,6 @@ document.querySelectorAll("[data-nav]").forEach(function(b){
   if(k==="home"){window.scrollTo(0,0);}
   else if(k==="play"){var el=$("modes");if(el){el.scrollIntoView();}}
   else if(k==="leaderboard"){var tp=$("topPlayers");if(tp){tp.scrollIntoView();}}
-  else if(k==="how"){openOverlay("howOverlay");}
-  else if(k==="support"){openOverlay("supportOverlay");}
  });
 });
 document.querySelectorAll(".modeCard").forEach(function(card){
@@ -1060,12 +1154,6 @@ document.querySelectorAll(".modeCard").forEach(function(card){
   if(m==="room"){goSetup(4,"online");}
   else{goSetup(parseInt(m,10),"together");}
  });
-});
-document.querySelectorAll(".ovClose").forEach(function(b){
- b.addEventListener("click",function(){b.closest(".overlay").classList.add("hidden");});
-});
-document.querySelectorAll(".overlay").forEach(function(ov){
- ov.addEventListener("click",function(e){if(e.target===ov){ov.classList.add("hidden");}});
 });
 (function(){
  var m=(window.location.search||"").match(/room=([A-Za-z0-9]{6})/);
