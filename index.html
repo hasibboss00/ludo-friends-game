@@ -932,7 +932,13 @@ function makeCode(){
  return out;
 }
 function setRoomStatus(t){var el=$("roomStatus");if(el){el.textContent=t||"";}}
+var peerOpenTimer=null, connTimer=null;
+function clearRoomTimers(){
+ if(peerOpenTimer){clearTimeout(peerOpenTimer);peerOpenTimer=null;}
+ if(connTimer){clearTimeout(connTimer);connTimer=null;}
+}
 function destroyPeer(){
+ clearRoomTimers();
  if(peer){try{peer.destroy();}catch(e){}}
  peer=null;conns=[];hostConn=null;isHost=false;mySeat=-1;
 }
@@ -976,7 +982,17 @@ function tryCreate(attempt){
  roomCode=makeCode();
  setRoomStatus("Creating room…");
  peer=new Peer("ludo-"+roomCode);
+ peerOpenTimer=setTimeout(function(){
+  peerOpenTimer=null;
+  var p=peer;peer=null;
+  if(p){try{p.destroy();}catch(e){}}
+  if(attempt===0){tryCreate(1);return;}
+  resetCreateBtn();
+  setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
+  updateStart();
+ },20000);
  peer.on("open",function(){
+  clearRoomTimers();
   isHost=true;mySeat=0;
   $("roomCode").textContent=roomCode;
   setRoomStatus("Room ready — share code "+roomCode);
@@ -997,6 +1013,7 @@ function tryCreate(attempt){
  peer.on("error",function(err){
   var type=err&&err.type;
   if(type==="unavailable-id"&&attempt===0){
+   clearRoomTimers();
    try{peer.destroy();}catch(e){}
    peer=null;
    tryCreate(1);
@@ -1055,6 +1072,10 @@ function joinRoom(){
   setRoomStatus("Joining…");
   var joined=false;
   peer=new Peer();
+  peerOpenTimer=setTimeout(function(){
+   peerOpenTimer=null;
+   failJoin("Could not reach the game server — check your internet and tap Create again.");
+  },20000);
   function failJoin(msg){
    if(joined){return;}
    destroyPeer();
@@ -1074,13 +1095,19 @@ function joinRoom(){
    if(!joined){failJoin("Connection lost — tap Create again.");}
   });
   peer.on("open",function(){
+   clearRoomTimers();
    hostConn=peer.connect("ludo-"+code);
+   connTimer=setTimeout(function(){
+    connTimer=null;
+    failJoin("Could not find that room — the host may have left. Check the code and try again.");
+   },15000);
    hostConn.on("data",function(msg){
     if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();}
     if(msg.type==="state"){applyNetState(msg.state);}
    });
    hostConn.on("open",function(){
     joined=true;
+    clearRoomTimers();
     if(btn){btn.disabled=false;btn.textContent="Join";}
     $("joinBtn").classList.add("sel");
     setRoomStatus("Joined room");
