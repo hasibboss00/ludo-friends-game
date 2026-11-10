@@ -808,7 +808,7 @@ function turnTick(){
  }
 }
 function newGame(n,mode,names){
- state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),players:[]};
+ state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
  buildBoard();
  buildPawns();
@@ -859,6 +859,7 @@ async function rollDice(){
  if(!state||state.phase!=="roll"){return;}
  if(state.mode==="online"&&!isHost&&!netAct){sendToHost({type:"roll"});return;}
  if(state.mode==="online"&&mySeat!==state.turn&&!netAct){return;}
+ if(rolling){return;}
  rolling=true;
  var btn=$("diceBox");
  btn.disabled=true;
@@ -868,6 +869,8 @@ async function rollDice(){
  btn.classList.remove("tumble");
  state.dice=1+Math.floor(Math.random()*6);
  btn.innerHTML=diceFaceSVG(state.dice);
+ state.rollId=(state.rollId||0)+1;
+ broadcast();
  beep(520,0.08);
  if(state.dice===6&&!state.firstSixPlayed){
   state.firstSixPlayed=true;
@@ -1009,25 +1012,52 @@ function updateStart(){
  renderLobby();
 }
 function serialState(){
- return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
+ return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
 }
 function broadcast(){
  if(!state||state.mode!=="online"||!isHost){return;}
  var msg={type:"state",state:serialState()};
  conns.forEach(function(c){try{c.conn.send(msg);}catch(e){}});
 }
+var lastRollId=-1, diceTumbling=false, diceTumbleTarget=0;
+async function guestDiceTumble(target){
+ // Same tumble the host's own button shows: 5 quick random faces, then land
+ // on the real rolled number. A roll arriving mid-tumble just retargets the
+ // landing face instead of starting a second animation.
+ if(diceTumbling){diceTumbleTarget=target;return;}
+ diceTumbling=true; diceTumbleTarget=target;
+ var btn=$("diceBox");
+ btn.classList.add("tumble");
+ for(var i=0;i<5;i++){btn.innerHTML=diceFaceSVG(1+Math.floor(Math.random()*6));await sleep(90);}
+ btn.classList.remove("tumble");
+ btn.innerHTML=diceFaceSVG(diceTumbleTarget);
+ diceTumbling=false;
+}
 function applyNetState(s){
  var had=!!state;
  var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
- state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",players:s.players.map(function(p){return {steps:p.steps.slice()};})};
+ state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
  if(!had){
   $("menu").classList.add("hidden");
   $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
   buildBoard();
   buildPawns();
+  $("diceBox").innerHTML=diceFaceSVG(6);
+  lastRollId=-1;
+ }else if(s.gameId!==oldGame){
+  lastRollId=-1;
  }
- $("diceBox").innerHTML=diceFaceSVG(state.dice||6);
+ if(s.rollId&&s.rollId!==lastRollId&&s.dice>=1&&s.dice<=6){
+  lastRollId=s.rollId;
+  guestDiceTumble(s.dice);
+ }else if(!diceTumbling&&s.dice>=1&&s.dice<=6){
+  // Re-broadcast of the same roll (e.g. after a token move): keep the face
+  // on the rolled number without replaying the tumble.
+  $("diceBox").innerHTML=diceFaceSVG(s.dice);
+ }
+ // dice===0 (turn just passed) deliberately leaves the face alone, so the
+ // last rolled number stays visible instead of snapping back to 6.
  renderAll();
  if(!had||s.turn!==oldTurn||s.gameId!==oldGame||(s.phase==="roll"&&oldPhase!=="roll")){resetTurnTimer();}
 }
