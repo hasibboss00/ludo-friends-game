@@ -58,6 +58,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .lplus{width:52px;height:52px;border-radius:50%;border:2px dashed rgba(155,139,208,.7);display:grid;place-items:center}
 .lwait{font-size:13px;color:#B9A8E8;font-weight:600}
 #lobbyStatus{margin-top:12px;font-size:13px;font-weight:600;color:#D8B4FE;min-height:18px}
+#reconnectBtn{margin-top:10px;padding:12px 22px;border:2px solid rgba(168,85,247,.7);border-radius:14px;background:rgba(123,47,247,.18);color:#E9D5FF;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
 #lobbyStartBtn{margin-top:18px;width:100%;padding:17px;border:0;border-radius:18px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:19px;font-weight:900;letter-spacing:2px;cursor:pointer;font-family:inherit;box-shadow:0 12px 30px rgba(123,47,247,.5)}
 #lobbyStartBtn:disabled{opacity:.45;cursor:default;box-shadow:none}
 #lobbyWait{margin-top:10px;font-size:13px;font-weight:600;color:#D8B4FE;min-height:18px}
@@ -322,6 +323,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     <div class="lobbyLbl" id="lobbyPlayersLbl">&#128101; 4 Players &ndash; Classic Ludo</div>
     <div id="lobbyGrid"></div>
     <div id="lobbyStatus"></div>
+    <button id="reconnectBtn" class="hidden">&#8635; Reconnect</button>
     <button id="lobbyStartBtn">&#9654; Start Game</button>
     <div id="lobbyWait"></div>
     <button id="leaveRoomBtn">&#10005; Leave room</button>
@@ -395,6 +397,8 @@ var FINISH=56, HOME_LEN=5;
 var $=function(id){return document.getElementById(id);};
 var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
 var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
+var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
+var ROOM_KEY="ludoRoom";
 var menuN=4, menuMode="together", hostConn=null, netAct=false;
 function playerSet(n){return n===2?[0,2]:(n===3?[0,1,2]:[0,1,2,3]);}
 function sanitizeName(v){return (v||"").replace(/^\s+|\s+$/g,"").slice(0,12);}
@@ -1022,6 +1026,7 @@ function lobbyPlayers(){
  return out;
 }
 function showLobby(asHost){
+ if(typeof asHost==="undefined"){asHost=(roomRole==="host");}
  $("menu").classList.add("hidden");
  $("homeView").classList.add("hidden");
  $("game").classList.add("hidden");
@@ -1037,7 +1042,7 @@ function renderLobby(){
  var grid=$("lobbyGrid"); if(!grid){return;}
  var lbl=$("lobbyPlayersLbl"); if(lbl){lbl.textContent="\uD83D\uDC65 "+menuN+" Players \u2013 Classic Ludo";}
  var filled={};
- if(isHost){
+ if(roomRole==="host"){
   lobbyPlayers().forEach(function(p){filled[p.seat]=p.name;});
  }else{
   guestLobby.forEach(function(p){filled[p.seat]=p.name;});
@@ -1073,10 +1078,10 @@ function renderLobby(){
  }
  var filledCount=Object.keys(filled).length;
  var sb=$("lobbyStartBtn"), wEl=$("lobbyWait");
- if(isHost){
+ if(roomRole==="host"){
   sb.classList.remove("hidden");
   var full=filledCount>=menuN;
-  sb.disabled=!full;
+  sb.disabled=!full||reconnecting;
   wEl.textContent=full?"":"Waiting for "+(menuN-filledCount)+" more player"+((menuN-filledCount)===1?"":"s")+"\u2026";
  }else{
   sb.classList.add("hidden");
@@ -1109,7 +1114,13 @@ function copyText(txt,done){
 function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode;}
 function leaveRoom(){
  if(isHost&&conns.length){conns.forEach(function(c){try{c.conn.send({type:"host-left"});}catch(e){}});}
+ else{sendToHost({type:"bye"});}
  destroyPeer();
+ roomRole=null; isHost=false; mySeat=-1;
+ clearRoomSession();
+ reconnecting=false; reconnectTries=0; peerDown=false; hostLeftSeen=false;
+ if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
  pendingNames={};
  guestLobby=[];
  hostName="";
@@ -1140,6 +1151,89 @@ function destroyPeer(){
  if(peer){try{peer.destroy();}catch(e){}}
  peer=null;conns=[];hostConn=null;isHost=false;mySeat=-1;
 }
+function saveRoomSession(){
+ if(!roomRole||!roomCode){return;}
+ try{sessionStorage.setItem(ROOM_KEY,JSON.stringify({role:roomRole,code:roomCode,name:roomRole==="host"?hostName:myName,n:menuN}));}catch(e){}
+}
+function clearRoomSession(){
+ try{sessionStorage.removeItem(ROOM_KEY);}catch(e){}
+}
+function readRoomSession(){
+ try{var s=sessionStorage.getItem(ROOM_KEY);return s?JSON.parse(s):null;}catch(e){return null;}
+}
+function setReconnectingUI(){
+ if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Reconnecting…");}
+}
+function scheduleReconnect(){
+ if(!roomRole||reconnecting){return;}
+ reconnecting=true; reconnectTries=0;
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
+ setReconnectingUI();
+ attemptReconnect();
+}
+function attemptReconnect(){
+ if(!roomRole){reconnecting=false;return;}
+ if(reconnectTries>=3){
+  reconnecting=false;
+  setLobbyStatus("Connection lost — could not reconnect.");
+  if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
+  return;
+ }
+ reconnectTries++;
+ if(roomRole==="host"){restoreHost();}else{restoreGuest();}
+}
+function reconnectFailed(){
+ if(!reconnecting||reconnectTimer){return;}
+ reconnectTimer=setTimeout(function(){reconnectTimer=null;attemptReconnect();},1200*reconnectTries);
+}
+function reconnectDone(){
+ if(!reconnecting){return;}
+ reconnecting=false; reconnectTries=0; peerDown=false;
+ if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
+ setLobbyStatus("");
+}
+function restoreHost(){
+ var s=readRoomSession();
+ var code=(s&&s.code)?s.code:roomCode;
+ var name=(s&&s.name)?s.name:hostName;
+ menuN=(s&&s.n)?s.n:menuN;
+ hostName=sanitizeName(name||"");
+ roomCode=code; roomRole="host"; peerDown=false;
+ destroyPeer();
+ setReconnectingUI();
+ ensurePeer(function(ok){
+  if(!ok){reconnectFailed();return;}
+  tryCreate(0,code,reconnectFailed);
+ });
+}
+function restoreGuest(){
+ var s=readRoomSession();
+ var code=(s&&s.code)?s.code:roomCode;
+ var name=(s&&s.name)?s.name:myName;
+ menuN=(s&&s.n)?s.n:menuN;
+ myName=sanitizeName(name||"");
+ roomCode=code; roomRole="guest"; peerDown=false;
+ destroyPeer();
+ setReconnectingUI();
+ ensurePeer(function(ok){
+  if(!ok){reconnectFailed();return;}
+  tryJoin(code,{restore:true,onFail:reconnectFailed});
+ });
+}
+function restoreSavedRoom(saved){
+ roomCode=saved.code||"";
+ menuN=saved.n||4;
+ roomRole=saved.role||null;
+ if((roomRole!=="host"&&roomRole!=="guest")||!roomCode){roomRole=null;return;}
+ if(roomRole==="host"){hostName=sanitizeName(saved.name||"");}
+ else{myName=sanitizeName(saved.name||"");}
+ showLobby();
+ setLobbyStatus("Reconnecting…");
+ reconnecting=true; reconnectTries=0;
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
+ attemptReconnect();
+}
 function resetCreateBtn(){
  var b=$("createBtn");if(b){b.disabled=false;b.textContent="Create";b.classList.remove("sel");}
 }
@@ -1159,6 +1253,7 @@ function ensurePeer(cb){
 function createRoom(){
  var btn=$("createBtn");
  destroyPeer();
+ roomRole=null;peerDown=false;hostLeftSeen=false;
  $("roomCode").textContent="";
  setRoomStatus("");
  if(btn){btn.disabled=true;btn.textContent="Creating…";}
@@ -1175,15 +1270,16 @@ function createRoom(){
   tryCreate(0);
  });
 }
-function tryCreate(attempt){
+function tryCreate(attempt,fixedCode,onFail){
  var btn=$("createBtn");
- roomCode=makeCode();
+ roomCode=fixedCode||makeCode();
  setRoomStatus("Creating room…");
  peer=new Peer("ludo-"+roomCode);
  peerOpenTimer=setTimeout(function(){
   peerOpenTimer=null;
   var p=peer;peer=null;
   if(p){try{p.destroy();}catch(e){}}
+  if(fixedCode){if(onFail){onFail();}return;}
   if(attempt===0){tryCreate(1);return;}
   resetCreateBtn();
   setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
@@ -1191,13 +1287,14 @@ function tryCreate(attempt){
  },20000);
  peer.on("open",function(){
   clearRoomTimers();
-  isHost=true;mySeat=0;
+  isHost=true;mySeat=0;roomRole="host";
   $("roomCode").textContent=roomCode;
   setRoomStatus("Room ready — share code "+roomCode);
   if(btn){btn.textContent="Created";btn.classList.add("sel");}
   updateStart();
-  showLobby(true);
-  broadcastLobby();
+  saveRoomSession();
+  if(!state){showLobby();broadcastLobby();}
+  if(reconnecting){reconnectDone();}
  });
  peer.on("connection",function(conn){
   conn.on("open",function(){
@@ -1213,17 +1310,29 @@ function tryCreate(attempt){
    conn.send({type:"welcome",seat:seat,n:menuN});
    broadcastLobby();
    conn.on("data",function(msg){onGuestMsg(msg,seat);});
-   conn.on("close",function(){onGuestLeft(seat);});
+   conn.on("close",function(){onGuestConnClosed(seat);});
    updateStart();
   });
  });
  peer.on("error",function(err){
   var type=err&&err.type;
-  if(type==="unavailable-id"&&attempt===0){
+  if(type==="unavailable-id"&&attempt===0&&!fixedCode){
    clearRoomTimers();
    try{peer.destroy();}catch(e){}
    peer=null;
    tryCreate(1);
+   return;
+  }
+  if(fixedCode){
+   clearRoomTimers();
+   var p2=peer;peer=null;
+   if(p2){try{p2.destroy();}catch(e){}}
+   if(onFail){onFail();}
+   return;
+  }
+  if(roomRole==="host"){
+   // Transient drop while hosting a room: keep the room and restore it.
+   scheduleReconnect();
    return;
   }
   destroyPeer();
@@ -1232,13 +1341,30 @@ function tryCreate(attempt){
   updateStart();
  });
  peer.on("disconnected",function(){
+  if(fixedCode){
+   clearRoomTimers();
+   var p3=peer;peer=null;
+   if(p3){try{p3.destroy();}catch(e){}}
+   if(onFail){onFail();}
+   return;
+  }
+  if(roomRole==="host"){scheduleReconnect();return;}
   setRoomStatus("Connection lost — tap Create again.");
   resetCreateBtn();
   updateStart();
  });
 }
 function onGuestMsg(msg,seat){
- if(msg&&msg.type==="hello"){pendingNames[seat]=sanitizeName(msg.name||"");renderLobby();broadcastLobby();return;}
+ if(msg&&msg.type==="hello"){
+  pendingNames[seat]=sanitizeName(msg.name||"");renderLobby();broadcastLobby();
+  if(state){
+   var c=null;
+   for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){c=conns[i].conn;break;}}
+   if(c){try{c.send({type:"state",state:serialState()});}catch(e){}}
+  }
+  return;
+ }
+ if(msg&&msg.type==="bye"){onGuestLeft(seat);return;}
  if(!state||state.mode!=="online"||!isHost){return;}
  if(msg.type==="roll"&&seat===state.turn){netAct=true;rollDice();netAct=false;}
  if(msg.type==="move"&&seat===state.turn&&state.phase==="move"){
@@ -1246,7 +1372,7 @@ function onGuestMsg(msg,seat){
   if(ok){netAct=true;applyMove(msg.p,msg.t);netAct=false;}
  }
 }
-function onGuestLeft(seat){
+function onGuestConnClosed(seat){
  var idx=-1;
  for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){idx=i;}}
  if(idx>=0){conns.splice(idx,1);}
@@ -1254,9 +1380,18 @@ function onGuestLeft(seat){
  renderLobby();
  broadcastLobby();
  if(!state){updateStart();return;}
+ // Seat is kept: a dropped guest can rejoin and keep playing (tokens stay).
+ // Their turn is forfeited now; later turns are forfeited by the 30s host timer.
+ if(state.turn===seat){nextTurn();return;}
+ renderAll();broadcast();
+ updateStart();
+}
+function onGuestLeft(seat){
+ // Explicit leave ("bye"): the seat is out of the game for good.
+ onGuestConnClosed(seat);
+ if(!state){return;}
  state.left[seat]=true;
  state.players[seat].steps=[-2,-2,-2,-2];
- if(state.turn===seat){nextTurn();return;}
  renderAll();broadcast();
  updateStart();
 }
@@ -1265,6 +1400,7 @@ function joinRoom(){
  var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
  if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
  destroyPeer();
+ roomRole=null;peerDown=false;hostLeftSeen=false;
  $("roomCode").textContent="";
  setRoomStatus("");
  myName=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
@@ -1280,58 +1416,83 @@ function joinRoom(){
    return;
   }
   setRoomStatus("Joining…");
-  var joined=false;
-  peer=new Peer();
-  peerOpenTimer=setTimeout(function(){
-   peerOpenTimer=null;
+  tryJoin(code,{});
+ });
+}
+function tryJoin(code,opts){
+ opts=opts||{};
+ var btn=$("joinBtn");
+ var joined=false;
+ peer=new Peer();
+ peerOpenTimer=setTimeout(function(){
+  peerOpenTimer=null;
+  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
+  failJoin("Could not reach the game server — check your internet and tap Create again.");
+ },20000);
+ function failJoin(msg){
+  if(joined){return;}
+  destroyPeer();
+  resetJoinBtn();
+  setRoomStatus(msg);
+  updateStart();
+ }
+ function dropRestorePeer(){
+  clearRoomTimers();
+  var p=peer;peer=null;
+  if(p){try{p.destroy();}catch(e){}}
+ }
+ peer.on("error",function(err){
+  var type=err&&err.type;
+  if(joined){peerDown=true;scheduleReconnect();return;}
+  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
+  if(type==="peer-unavailable"){
+   failJoin("Could not find that room — check the code and try again.");
+  }else{
    failJoin("Could not reach the game server — check your internet and tap Create again.");
-  },20000);
-  function failJoin(msg){
-   if(joined){return;}
-   destroyPeer();
-   resetJoinBtn();
-   setRoomStatus(msg);
-   updateStart();
   }
-  peer.on("error",function(err){
-   var type=err&&err.type;
-   if(type==="peer-unavailable"){
-    failJoin("Could not find that room — check the code and try again.");
-   }else{
-    failJoin("Could not reach the game server — check your internet and tap Create again.");
-   }
+ });
+ peer.on("disconnected",function(){
+  if(joined){peerDown=true;scheduleReconnect();return;}
+  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
+  failJoin("Connection lost — tap Create again.");
+ });
+ peer.on("open",function(){
+  clearRoomTimers();
+  hostConn=peer.connect("ludo-"+code);
+  connTimer=setTimeout(function(){
+   connTimer=null;
+   if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
+   failJoin("Could not find that room — the host may have left. Check the code and try again.");
+  },15000);
+  hostConn.on("data",function(msg){
+   if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();renderLobby();}
+   if(msg.type==="state"){applyNetState(msg.state);}
+   if(msg.type==="lobby"){guestLobby=msg.players||[];renderLobby();}
+   if(msg.type==="host-left"){hostLeftSeen=true;clearRoomSession();roomRole=null;setLobbyStatus("Host left the room");}
   });
-  peer.on("disconnected",function(){
-   if(!joined){failJoin("Connection lost — tap Create again.");}
-  });
-  peer.on("open",function(){
+  hostConn.on("open",function(){
+   joined=true;
    clearRoomTimers();
-   hostConn=peer.connect("ludo-"+code);
-   connTimer=setTimeout(function(){
-    connTimer=null;
-    failJoin("Could not find that room — the host may have left. Check the code and try again.");
-   },15000);
-   hostConn.on("data",function(msg){
-    if(msg.type==="welcome"){mySeat=msg.seat;menuN=msg.n;updateStart();renderLobby();}
-    if(msg.type==="state"){applyNetState(msg.state);}
-    if(msg.type==="lobby"){guestLobby=msg.players||[];renderLobby();}
-    if(msg.type==="host-left"){setLobbyStatus("Host left the room");}
-   });
-   hostConn.on("open",function(){
-    joined=true;
-    clearRoomTimers();
-    if(btn){btn.disabled=false;btn.textContent="Join";}
-    $("joinBtn").classList.add("sel");
-    setRoomStatus("Joined room");
-    showLobby(false);
-    try{hostConn.send({type:"hello",name:myName});}catch(e){}
-   });
-   hostConn.on("error",function(){
-    failJoin("Could not find that room — check the code and try again.");
-   });
-   hostConn.on("close",function(){
-    if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}
-   });
+   roomRole="guest";
+   if(btn){btn.disabled=false;btn.textContent="Join";}
+   $("joinBtn").classList.add("sel");
+   setRoomStatus("Joined room");
+   saveRoomSession();
+   if(!state){showLobby();}
+   try{hostConn.send({type:"hello",name:myName});}catch(e){}
+   if(reconnecting){reconnectDone();}
+  });
+  hostConn.on("error",function(){
+   if(joined){peerDown=true;scheduleReconnect();return;}
+   if(opts.restore){if(opts.onFail){opts.onFail();}return;}
+   failJoin("Could not find that room — check the code and try again.");
+  });
+  hostConn.on("close",function(){
+   if(reconnecting){return;}
+   if(peerDown){return;}
+   if(hostLeftSeen){if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}return;}
+   if(roomRole==="guest"){scheduleReconnect();return;}
+   if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}
   });
  });
 }
@@ -1376,6 +1537,20 @@ $("shareRoomBtn").addEventListener("click",function(){
  }
 });
 $("leaveRoomBtn").addEventListener("click",leaveRoom);
+$("reconnectBtn").addEventListener("click",function(){
+ if(!roomRole){return;}
+ reconnecting=true; reconnectTries=0;
+ if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
+ setLobbyStatus("Reconnecting…");
+ attemptReconnect();
+});
+document.addEventListener("visibilitychange",function(){
+ if(document.hidden){return;}
+ if(!roomRole||reconnecting){return;}
+ if($("lobby").classList.contains("hidden")&&$("game").classList.contains("hidden")){return;}
+ if(!peer||peer.disconnected){scheduleReconnect();}
+});
 $("startBtn").addEventListener("click",function(){
  if(menuMode==="online"&&!isHost){return;}
  startGame();
@@ -1392,7 +1567,7 @@ $("muteBtn").addEventListener("click",function(){
  if(!muted){beep(700,0.06);}
 });
 function startWith(n){
- menuN=n;menuMode="together";isHost=false;mySeat=-1;
+ menuN=n;menuMode="together";isHost=false;mySeat=-1;roomRole=null;
  startGame();
 }
 $("diceBox").innerHTML=diceFaceSVG(6);
@@ -1423,9 +1598,12 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  if(m){
   goSetup(4,"online");
   $("roomInput").value=m[1].toUpperCase();
+  return;
  }
+ var saved=readRoomSession();
+ if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;}};
+window.__ludo={get state(){return state;},set state(v){state=v;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
 })();
 </script>
 </body>
