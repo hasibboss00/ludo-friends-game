@@ -119,6 +119,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .cap-particle{position:absolute;width:7px;height:7px;border-radius:50%;pointer-events:none;z-index:4;animation:capParticle .45s ease-out forwards}
 @keyframes capParticle{0%{transform:translate(-50%,-50%) translate(0,0) scale(1);opacity:1}100%{transform:translate(-50%,-50%) translate(var(--dx,0px),var(--dy,-14px)) scale(.3);opacity:0}}
 #controlBar{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;flex-wrap:wrap}
+#turnMsg{min-height:20px;text-align:center;color:#FBBF24;font-size:13px;font-weight:700;margin-top:6px}
+#diceLog{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;min-height:26px;margin-top:4px}
+#diceLog .dl{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border:2px solid #888;border-radius:20px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;font-weight:800}
+#diceLog .dl i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.rulesLine{margin-top:14px;text-align:center;color:#B9A8E8;font-size:12.5px;line-height:1.6}
 #turnPill{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 18px;font-weight:800;font-size:16px;backdrop-filter:blur(8px)}
 #turnPill .dot{width:14px;height:14px;border-radius:50%;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.5)}
 #diceBox{width:76px;height:76px;border-radius:18px;background:linear-gradient(145deg,#fff,#D9D9EA);box-shadow:0 12px 26px rgba(0,0,0,.45),0 0 20px rgba(168,85,247,.5);cursor:pointer;display:grid;place-items:center;border:0;padding:0}
@@ -314,6 +319,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     </div>
     <button id="backBtn" class="backBtn">&larr; Home</button>
     <button id="startBtn">START</button>
+    <div class="rulesLine">Classic rules &mdash; 6 = extra roll &middot; capture = extra roll &middot; 3 sixes in a row = turn lost &middot; exact roll to finish &middot; &#9733; = safe</div>
   </div>
 
   <div id="lobby" class="hidden">
@@ -368,6 +374,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
           <button id="rollBtn"><svg width="20" height="20" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="20" fill="#fff"/><circle cx="30" cy="30" r="10" fill="#7B2FF7"/><circle cx="70" cy="30" r="10" fill="#7B2FF7"/><circle cx="50" cy="50" r="10" fill="#7B2FF7"/><circle cx="30" cy="70" r="10" fill="#7B2FF7"/><circle cx="70" cy="70" r="10" fill="#7B2FF7"/></svg>Roll Dice</button>
           <button id="muteBtn" aria-label="Sound"></button>
         </div>
+        <div id="turnMsg"></div>
+        <div id="diceLog" title="Recent rolls — the same for every player"></div>
       </div>
       <div id="cardsRight"></div>
     </div>
@@ -404,20 +412,31 @@ var ARROWS={"7,0":["\u2192",0],"0,7":["\u2193",1],"7,14":["\u2190",2],"14,7":["\
 var FINISH=56, HOME_LEN=5;
 var $=function(id){return document.getElementById(id);};
 var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
-// Fair-dice decks: each seat draws from its own shuffled 12-card deck
-// (every number 1–6 exactly twice), so no one can ride a 6-streak while
-// another starves — over each deck every player averages out the same.
-// Pure Math.random() dice made one player roll 6 after 6 and the game
-// one-sided. Decks live host-side only (the host rolls for everyone).
-var diceDecks={};
-function drawDice(seat){
- var d=diceDecks[seat];
- if(!d||!d.length){
-  d=[1,1,2,2,3,3,4,4,5,5,6,6];
-  for(var i=d.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=d[i];d[i]=d[j];d[j]=t;}
-  diceDecks[seat]=d;
+// Classic rule set (fixed for every match — never changed silently):
+//  - 6 grants an extra roll; capturing grants an extra roll.
+//  - Reaching home grants NO extra roll.
+//  - 3 sixes in a row forfeits the turn (classic anti-flood rule).
+//  - Exact roll required to enter home (FINISH); overshoot cannot move.
+//  - ★ squares are safe: no capture there. Home columns cannot be captured.
+//  - The HOST is the authoritative server in this P2P game: it alone rolls
+//    the dice and applies moves; guests only send roll/move requests, which
+//    the host validates (turn, phase, legal move) before applying.
+var RULES={extraOnSix:true,extraOnCapture:true,extraOnHome:false,sixForfeit:3,exactFinish:true};
+var hudMsg="", hudMsgUntil=0;
+// Genuine unbiased dice. Every roll is independent: each face has exactly
+// 1/6 probability, from crypto.getRandomValues with rejection sampling
+// (modulo bias removed). NOTHING adjusts the result — no decks, no streak
+// compensation, no per-player balancing, no host favouritism. A streak of
+// 6s is possible, as in real Ludo; the 3-six forfeit rule (above) is the
+// only cap, and it applies to everyone equally.
+function rollFairDie(){
+ var c=(typeof window!=="undefined"&&(window.crypto||window.msCrypto))||null;
+ if(c&&c.getRandomValues){
+  var a=new Uint32Array(1);
+  do{c.getRandomValues(a);}while(a[0]>=4294967292); // 2^32 % 6 == 4: reject the biased tail
+  return (a[0]%6)+1;
  }
- return d.pop();
+ return 1+Math.floor(Math.random()*6); // fallback: still uniform 1/6
 }
 var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
 var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
@@ -785,6 +804,19 @@ function renderHud(){
  var canRoll=state.phase==="roll"&&mine;
  $("diceBox").disabled=!canRoll;
  $("rollBtn").disabled=!canRoll;
+ // Public dice log: the last rolls, same on every player's screen.
+ var dl=$("diceLog");
+ if(dl){
+  var html="";
+  var log=(state.diceLog||[]).slice(-8);
+  for(var i=0;i<log.length;i++){
+   var lc=COLORS[playerSet(state.n)[log[i].s]];
+   html+='<span class="dl" style="border-color:'+(lc?lc.hex:"#888")+'"><i style="background:'+(lc?lc.hex:"#888")+'"></i>'+log[i].d+'</span>';
+  }
+  dl.innerHTML=html;
+ }
+ var tm=$("turnMsg");
+ if(tm){tm.textContent=(hudMsg&&Date.now()<hudMsgUntil)?hudMsg:"";}
  buildCards();
 }
 function renderAll(){renderPawns();renderHud();}
@@ -840,8 +872,7 @@ function turnTick(){
  }
 }
 function newGame(n,mode,names){
- state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
- diceDecks={};
+ state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,sixStreak:0,diceLog:[],left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
  buildBoard();
  buildPawns();
@@ -881,6 +912,7 @@ function computeMovable(){
 }
 function nextTurn(){
  do{state.turn=(state.turn+1)%state.n;}while(state.left[state.turn]);
+ state.sixStreak=0;
  state.phase="roll";
  state.dice=0;
  state.movable=[];
@@ -900,11 +932,29 @@ async function rollDice(){
  btn.classList.add("tumble");
  for(var i=0;i<5;i++){btn.innerHTML=diceFaceSVG(1+Math.floor(Math.random()*6));await sleep(90);}
  btn.classList.remove("tumble");
- state.dice=drawDice(state.turn);
+ state.dice=rollFairDie();
  btn.innerHTML=diceFaceSVG(state.dice);
  state.rollId=(state.rollId||0)+1;
+ // Public dice log: every roll (seat + value) is broadcast to all players,
+ // so anyone can see the full roll history — no hidden adjustments.
+ state.diceLog.push({s:state.turn,d:state.dice,r:state.rollId});
+ if(state.diceLog.length>30){state.diceLog.shift();}
+ if(state.dice===6){state.sixStreak=(state.sixStreak||0)+1;}else{state.sixStreak=0;}
  broadcast();
  beep(520,0.08);
+ if(state.sixStreak>=RULES.sixForfeit){
+  // 3 sixes in a row: the turn is forfeited, no move on the 3rd six.
+  state.sixStreak=0;
+  state.movable=[];
+  hudMsg=displayName(state.turn)+" rolled 3 sixes in a row — turn lost!";
+  hudMsgUntil=Date.now()+2500;
+  renderAll();
+  broadcast();
+  await sleep(1400);
+  rolling=false;
+  nextTurn();
+  return;
+ }
  if(state.dice===6&&!state.firstSixPlayed){
   state.firstSixPlayed=true;
   playSound("sndFirst6");
@@ -1096,7 +1146,7 @@ function updateStart(){
  renderLobby();
 }
 function serialState(){
- return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
+ return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,sixStreak:state.sixStreak||0,diceLog:(state.diceLog||[]).slice(),left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
 }
 function broadcast(){
  if(!state||state.mode!=="online"||!isHost){return;}
@@ -1120,7 +1170,7 @@ async function guestDiceTumble(target){
 function applyNetState(s){
  var had=!!state;
  var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
- state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
+ state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,sixStreak:s.sixStreak||0,diceLog:(s.diceLog||[]).slice(),left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
  if(!had){
   $("menu").classList.add("hidden");
   $("lobby").classList.add("hidden");
@@ -1946,7 +1996,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},drawDice:drawDice,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
 })();
 </script>
 </body>
