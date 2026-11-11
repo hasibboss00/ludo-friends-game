@@ -537,7 +537,7 @@ function buildHeroBoard(){
    var rc=YARD_SLOTS[ci][0];
    p.style.left=((rc[1]+0.5)/15*100)+"%";
    p.style.top=((rc[0]+0.5)/15*100)+"%";
-   p.innerHTML=pawnSVG(COLORS[ci]);
+   p.innerHTML=pawnSVG(COLORS[ci],COLORS[ci].name+"-hero-"+ci);
    pawns.appendChild(p);
   });
  }
@@ -552,8 +552,9 @@ function tokenRC(colorIdx,steps,slot){
  if(steps>=51&&steps<=55){return HOME[colorIdx][steps-51];}
  return [7.5,7.5];
 }
-function pawnSVG(c){
- return '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="pg'+c.name+'" cx="35%" cy="28%" r="80%"><stop offset="0%" stop-color="'+c.light+'"/><stop offset="30%" stop-color="'+c.hex+'"/><stop offset="68%" stop-color="'+c.hex+'"/><stop offset="100%" stop-color="'+c.dark+'"/></radialGradient></defs><ellipse cx="24" cy="43" rx="13" ry="3.6" fill="rgba(0,0,0,0.28)"/><path d="M24 17 C17 19 14 27 13.4 35 L11 41 Q24 45.5 37 41 L34.6 35 C34 27 31 19 24 17 Z" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><circle cx="24" cy="11" r="8" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><ellipse cx="20" cy="8" rx="3.8" ry="2.6" fill="rgba(255,255,255,0.95)" transform="rotate(-28 20 8)"/><ellipse cx="19" cy="29" rx="2.4" ry="6" fill="rgba(255,255,255,0.45)" transform="rotate(-14 19 29)"/></svg>';
+function pawnSVG(c,uid){
+ var gid="pg-"+uid;
+ return '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="'+gid+'" cx="35%" cy="28%" r="80%"><stop offset="0%" stop-color="'+c.light+'"/><stop offset="30%" stop-color="'+c.hex+'"/><stop offset="68%" stop-color="'+c.hex+'"/><stop offset="100%" stop-color="'+c.dark+'"/></radialGradient></defs><ellipse cx="24" cy="43" rx="13" ry="3.6" fill="rgba(0,0,0,0.28)"/><path d="M24 17 C17 19 14 27 13.4 35 L11 41 Q24 45.5 37 41 L34.6 35 C34 27 31 19 24 17 Z" fill="url(#'+gid+')" stroke="'+c.dark+'" stroke-width="1.6"/><circle cx="24" cy="11" r="8" fill="url(#'+gid+')" stroke="'+c.dark+'" stroke-width="1.6"/><ellipse cx="20" cy="8" rx="3.8" ry="2.6" fill="rgba(255,255,255,0.95)" transform="rotate(-28 20 8)"/><ellipse cx="19" cy="29" rx="2.4" ry="6" fill="rgba(255,255,255,0.45)" transform="rotate(-14 19 29)"/></svg>';
 }
 function diceFaceSVG(v){
  var map={1:[[50,50]],2:[[32,32],[68,68]],3:[[30,30],[50,50],[70,70]],4:[[32,32],[68,32],[32,68],[68,68]],5:[[30,30],[70,30],[50,50],[30,70],[70,70]],6:[[32,28],[68,28],[32,50],[68,50],[32,72],[68,72]]};
@@ -638,8 +639,8 @@ function buildBoard(){
     sl.style.borderColor=COLORS[ci].hex;
     sl.style.background=COLORS[ci].light;
     var rc=YARD_SLOTS[ci][t];
-    sl.style.left=(((rc[1]-y[1])/6*100)-7)+"%";
-    sl.style.top=(((rc[0]-y[0])/6*100)-7)+"%";
+    sl.style.left=(((rc[1]-y[1]+0.5)/6*100)-7)+"%";
+    sl.style.top=(((rc[0]-y[0]+0.5)/6*100)-7)+"%";
     sl.setAttribute("data-p",String(playerSet(state.n).indexOf(ci)));
     sl.setAttribute("data-t",String(t));
     sl.addEventListener("click",function(){
@@ -699,7 +700,7 @@ function buildPawns(){
    d.id="pawn-"+p+"-"+t;
    d.setAttribute("data-p",String(p));
    d.setAttribute("data-t",String(t));
-   d.innerHTML=pawnSVG(COLORS[ci]);
+   d.innerHTML=pawnSVG(COLORS[ci],COLORS[ci].name+"-"+p+"-"+t);
    d.addEventListener("click",function(){
     var pp=parseInt(this.getAttribute("data-p"),10);
     var tt=parseInt(this.getAttribute("data-t"),10);
@@ -1166,7 +1167,7 @@ function renderLobby(){
    if(seat===0){var cr=document.createElement("span"); cr.className="crownBadge"; cr.textContent="\uD83D\uDC51"; av.appendChild(cr);}
    var nEl=document.createElement("div"); nEl.className="lname"; nEl.textContent=nm;
    var row=document.createElement("div"); row.className="lrow";
-   var pw=document.createElement("div"); pw.className="lpawn"; pw.innerHTML=pawnSVG(c);
+   var pw=document.createElement("div"); pw.className="lpawn"; pw.innerHTML=pawnSVG(c,c.name+"-lobby-"+seat);
    var rd=document.createElement("div"); rd.className="readyPill"; rd.textContent="\u2713 Ready";
    row.appendChild(pw); row.appendChild(rd);
    slot.appendChild(av); slot.appendChild(nEl); slot.appendChild(row);
@@ -1174,7 +1175,7 @@ function renderLobby(){
    slot.className="lslot empty";
    var plus=document.createElement("div"); plus.className="lplus"; plus.innerHTML=USER_PLUS_SVG;
    var wt=document.createElement("div"); wt.className="lwait"; wt.textContent="Waiting for Player...";
-   var pw2=document.createElement("div"); pw2.className="lpawn dim"; pw2.innerHTML=pawnSVG(c);
+   var pw2=document.createElement("div"); pw2.className="lpawn dim"; pw2.innerHTML=pawnSVG(c,c.name+"-lobby-dim-"+seat);
    slot.appendChild(plus); slot.appendChild(wt); slot.appendChild(pw2);
   }
   grid.appendChild(slot);
