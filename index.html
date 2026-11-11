@@ -404,11 +404,31 @@ var ARROWS={"7,0":["\u2192",0],"0,7":["\u2193",1],"7,14":["\u2190",2],"14,7":["\
 var FINISH=56, HOME_LEN=5;
 var $=function(id){return document.getElementById(id);};
 var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
+// Fair-dice decks: each seat draws from its own shuffled 12-card deck
+// (every number 1–6 exactly twice), so no one can ride a 6-streak while
+// another starves — over each deck every player averages out the same.
+// Pure Math.random() dice made one player roll 6 after 6 and the game
+// one-sided. Decks live host-side only (the host rolls for everyone).
+var diceDecks={};
+function drawDice(seat){
+ var d=diceDecks[seat];
+ if(!d||!d.length){
+  d=[1,1,2,2,3,3,4,4,5,5,6,6];
+  for(var i=d.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=d[i];d[i]=d[j];d[j]=t;}
+  diceDecks[seat]=d;
+ }
+ return d.pop();
+}
 var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
 var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
 var hbTimer=null, guestHbTimer=null, lastHostMsg=0;
 var HB_INTERVAL=5000, HB_DEAD=15000;
 var joining=false, joinWatchdog=null;
+// One-retry state for a fresh Join whose host id is temporarily unregistered.
+// 0 = unused, 1 = retry scheduled / in flight, 2 = retry already failed.
+// Reset by joinRoom for each fresh join. Lives outside tryJoin because the
+// retry itself calls tryJoin again and must NOT get a second retry.
+var joinRetryTimer=null, joinRetryState=0;
 var ROOM_KEY="ludoRoom";
 var seatCid={};
 function getClientId(){
@@ -821,6 +841,7 @@ function turnTick(){
 }
 function newGame(n,mode,names){
  state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
+ diceDecks={};
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
  buildBoard();
  buildPawns();
@@ -879,7 +900,7 @@ async function rollDice(){
  btn.classList.add("tumble");
  for(var i=0;i<5;i++){btn.innerHTML=diceFaceSVG(1+Math.floor(Math.random()*6));await sleep(90);}
  btn.classList.remove("tumble");
- state.dice=1+Math.floor(Math.random()*6);
+ state.dice=drawDice(state.turn);
  btn.innerHTML=diceFaceSVG(state.dice);
  state.rollId=(state.rollId||0)+1;
  broadcast();
@@ -1329,18 +1350,25 @@ function attemptReconnect(){
  // restore attempt here would destroyPeer() the new join mid-flight and
  // wipe its timers, stranding the button on "Joining…" forever.
  if(joining){return;}
- if(reconnectTries>=3){
+ // A host whose broker socket died often hits "ID is taken" for a while:
+ // the server still holds the stale registration until ITS cleanup runs
+ // (up to ~a minute when the phone slept). The host must keep trying so
+ // new guests can find the room again; a guest only needs a few tries.
+ var maxTry=(roomRole==="host")?12:3;
+ if(reconnectTries>=maxTry){
   reconnecting=false;
   setLobbyStatus("Connection lost — could not reconnect.");
   if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
   return;
  }
  reconnectTries++;
+ if(roomRole==="host"){setLobbyStatus("Net gelo — room abar online hocche… ("+reconnectTries+"/"+maxTry+")");}
  if(roomRole==="host"){restoreHost();}else{restoreGuest();}
 }
 function reconnectFailed(){
  if(!reconnecting||reconnectTimer){return;}
- reconnectTimer=setTimeout(function(){reconnectTimer=null;attemptReconnect();},1200*reconnectTries);
+ var delay=(roomRole==="host")?5000:1200*reconnectTries;
+ reconnectTimer=setTimeout(function(){reconnectTimer=null;attemptReconnect();},delay);
 }
 function reconnectDone(){
  if(!reconnecting){return;}
@@ -1357,7 +1385,8 @@ function restoreHost(){
  hostName=sanitizeName(name||"");
  roomCode=code; roomRole="host"; peerDown=false;
  destroyPeer();
- setReconnectingUI();
+ // No setReconnectingUI() here: attemptReconnect already set the
+ // "(chesta X/12)" status, and this would overwrite it with plain text.
  ensurePeer(function(ok){
   if(!ok){reconnectFailed();return;}
   tryCreate(0,code,reconnectFailed);
@@ -1620,6 +1649,8 @@ function joinRoom(){
  // further tap. The button stays disabled on "Joining…" until the welcome
  // arrives (or the join fails), so a 2nd tap can never start a second join.
  if(joining){return;}
+ joinRetryState=0;
+ if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
  var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
  if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
  destroyPeer();
@@ -1677,6 +1708,7 @@ function tryJoin(code,opts){
   failed=true;
   joining=false;
   if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
+  if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
   reconnecting=false; reconnectTries=0;
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
   roomRole=null;
@@ -1692,12 +1724,32 @@ function tryJoin(code,opts){
   var p=peer;peer=null;
   if(p){try{p.destroy();}catch(e){}}
  }
+ // One free retry when the host's id is temporarily unregistered (its broker
+ // socket died mid-reconnect). The connect failure may surface on the Peer
+ // AND on the DataConnection — this helper dedupes, so the first error
+ // claims the retry, the second only waits for it, and a failure of the
+ // retry itself finally fails the join.
+ function tryPeerUnavailable(){
+  if(joinRetryState===1){return "pending";}
+  if(joinRetryState===2){return "exhausted";}
+  joinRetryState=1;
+  dropRestorePeer();
+  setRoomStatus("Host-ke ekhon khuje pacchi na — abar chesta korchi…");
+  joinRetryTimer=setTimeout(function(){
+   joinRetryTimer=null;
+   joinRetryState=2;
+   if(failed){return;}
+   tryJoin(code,opts);
+  },4000);
+  return "started";
+ }
  peer.on("error",function(err){
   var type=err&&err.type;
   if(joined){peerDown=true;scheduleReconnect();return;}
   if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
   if(type==="peer-unavailable"){
-   failJoin("Could not find that room — check the code and try again.");
+   if(tryPeerUnavailable()!=="exhausted"){return;}
+   failJoin("Host-ke khuje pacchi na — host-er phone-e net thik ache kina dekhe abar Join chap dao.");
   }else{
    failJoin("Could not reach the game server — check your internet and tap Create again.");
   }
@@ -1773,7 +1825,10 @@ function tryJoin(code,opts){
   hostConn.on("error",function(){
    if(joined){peerDown=true;scheduleReconnect();return;}
    if(opts.restore){if(opts.onFail){opts.onFail();}return;}
-   failJoin("Could not find that room — check the code and try again.");
+   // Connect failure before open = the host's id is not reachable right now;
+   // same one-retry window as the peer-unavailable path, same message.
+   if(tryPeerUnavailable()!=="exhausted"){return;}
+   failJoin("Host-ke khuje pacchi na — host-er phone-e net thik ache kina dekhe abar Join chap dao.");
   });
   hostConn.on("close",function(){
    if(reconnecting){return;}
@@ -1891,7 +1946,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},drawDice:drawDice,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
 })();
 </script>
 </body>
