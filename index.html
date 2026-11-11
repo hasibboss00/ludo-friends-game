@@ -124,14 +124,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 @keyframes capParticle{0%{transform:translate(-50%,-50%) translate(0,0) scale(1);opacity:1}100%{transform:translate(-50%,-50%) translate(var(--dx,0px),var(--dy,-14px)) scale(.3);opacity:0}}
 #controlBar{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;flex-wrap:wrap}
 #turnMsg{min-height:20px;text-align:center;color:#FBBF24;font-size:13px;font-weight:700;margin-top:6px}
-#diceLog{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;min-height:26px;margin-top:4px}
-#diceLog .dl{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border:2px solid #888;border-radius:20px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;font-weight:800}
-#diceLog .dl i{width:9px;height:9px;border-radius:50%;display:inline-block}
+#lastRoll{min-height:22px;text-align:center;color:#fff;font-size:15px;font-weight:800;margin-top:4px}
 .rulesLine{margin-top:14px;text-align:center;color:#B9A8E8;font-size:12.5px;line-height:1.6}
 #turnPill{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 18px;font-weight:800;font-size:16px;backdrop-filter:blur(8px)}
 #turnPill .dot{width:14px;height:14px;border-radius:50%;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.5)}
 #diceBox{width:76px;height:76px;border-radius:18px;background:linear-gradient(145deg,#fff,#D9D9EA);box-shadow:0 12px 26px rgba(0,0,0,.45),0 0 20px rgba(168,85,247,.5);cursor:pointer;display:grid;place-items:center;border:0;padding:0}
-#diceBox:disabled{opacity:.5;cursor:default}
+#diceBox:disabled{opacity:1;cursor:default}
 #diceBox.tumble{animation:tumble .5s ease}
 @keyframes tumble{0%{transform:rotate(0) scale(1)}25%{transform:rotate(100deg) scale(1.12)}55%{transform:rotate(220deg) scale(.94)}80%{transform:rotate(310deg) scale(1.06)}100%{transform:rotate(360deg) scale(1)}}
 #rollBtn{padding:17px 26px;border:0;border-radius:16px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:17px;font-weight:900;letter-spacing:1px;cursor:pointer;font-family:inherit;box-shadow:0 12px 26px rgba(123,47,247,.5);display:flex;align-items:center;gap:9px}
@@ -384,7 +382,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
           <button id="muteBtn" aria-label="Sound"></button>
         </div>
         <div id="turnMsg"></div>
-        <div id="diceLog" title="Recent rolls — the same for every player"></div>
+        <div id="lastRoll"></div>
       </div>
       <div id="cardsRight"></div>
     </div>
@@ -817,17 +815,6 @@ function renderHud(){
  var canRoll=state.phase==="roll"&&mine&&!(state.mode==="online"&&rollPending);
  $("diceBox").disabled=!canRoll;
  $("rollBtn").disabled=!canRoll;
- // Public dice log: the last rolls, same on every player's screen.
- var dl=$("diceLog");
- if(dl){
-  var html="";
-  var log=(state.diceLog||[]).slice(-8);
-  for(var i=0;i<log.length;i++){
-   var lc=COLORS[playerSet(state.n)[log[i].s]];
-   html+='<span class="dl" style="border-color:'+(lc?lc.hex:"#888")+'"><i style="background:'+(lc?lc.hex:"#888")+'"></i>'+log[i].d+'</span>';
-  }
-  dl.innerHTML=html;
- }
  var tm=$("turnMsg");
  if(tm){tm.textContent=(hudMsg&&Date.now()<hudMsgUntil)?hudMsg:"";}
  buildCards();
@@ -955,9 +942,10 @@ async function rollDice(){
  btn.classList.remove("tumble");
  state.dice=rollFairDie();
  btn.innerHTML=diceFaceSVG(state.dice);
+ setLastRoll(state.turn,state.dice);
  state.rollId=(state.rollId||0)+1;
- // Public dice log: every roll (seat + value) is broadcast to all players,
- // so anyone can see the full roll history — no hidden adjustments.
+ // Dice log is still recorded in the state (and broadcast), but the screen
+ // shows only the latest roll — no history list below the dice.
  state.diceLog.push({s:state.turn,d:state.dice,r:state.rollId});
  if(state.diceLog.length>30){state.diceLog.shift();}
  if(state.dice===6){state.sixStreak=(state.sixStreak||0)+1;}else{state.sixStreak=0;}
@@ -1201,6 +1189,14 @@ async function guestDiceTumble(target){
  btn.innerHTML=diceFaceSVG(diceTumbleTarget);
  diceTumbling=false;
 }
+// The latest roll, in words, for everyone to see: "Alvi rolled 4". It stays
+// until the next roll (mine or an opponent's) and is cleared for a new game.
+function setLastRoll(seat,dice){
+ var el=$("lastRoll");
+ if(!el){return;}
+ if(seat===null||seat===undefined||!dice){el.textContent="";return;}
+ el.textContent=displayName(seat)+" rolled "+dice;
+}
 function applyNetState(s){
  var had=!!state;
  var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
@@ -1222,8 +1218,14 @@ function applyNetState(s){
   if(s.phase!=="over"){$("winOverlay").classList.add("hidden");}
   if(s.rollId===0){startTimer();}
  }
+ if(s.rollId===0){setLastRoll(null);}
  if(s.rollId&&s.rollId!==lastRollId&&s.dice>=1&&s.dice<=6){
   lastRollId=s.rollId;
+  // Who rolled? The dice log's newest entry (matched by rollId) names the
+  // roller. s.turn alone is wrong after a no-move / three-sixes, where the
+  // turn has already passed to the next player in this same state.
+  var lr=(s.diceLog&&s.diceLog.length)?s.diceLog[s.diceLog.length-1]:null;
+  setLastRoll((lr&&lr.r===s.rollId)?lr.s:s.turn, s.dice);
   guestDiceTumble(s.dice);
  }else if(!diceTumbling&&s.dice>=1&&s.dice<=6){
   // Re-broadcast of the same roll (e.g. after a token move): keep the face
@@ -1356,7 +1358,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="521";
+var APP_VERSION="522";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
