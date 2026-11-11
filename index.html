@@ -108,6 +108,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .pawn svg{width:100%;height:100%;display:block;filter:drop-shadow(0 3px 3px rgba(0,0,0,.35))}
 .pawn.movable{cursor:pointer;z-index:4}
 .pawn.movable::before{content:"";position:absolute;inset:-22%;border:3px solid #fff;border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 14px rgba(255,255,255,.9)}
+.pawn.canCapture::after{content:"";position:absolute;inset:-27%;border:3px solid var(--cap,#fff);border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 16px var(--cap,#fff)}
+.pawn.targeted::before{content:"";position:absolute;inset:-27%;border:3px solid #FF3B30;border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 16px rgba(255,59,48,.85)}
 @keyframes pulseRing{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
 .pawn.cap-bounce{animation:capBounce .3s cubic-bezier(.34,1.56,.64,1)}
 @keyframes capBounce{0%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(0)}40%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(-4px)}100%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(0)}}
@@ -390,6 +392,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 </div>
 <audio id="sndFirst6" src="hello-sulululu_0_7j54.mp3" preload="auto"></audio>
 <audio id="sndKill" src="rag-korla_1_nz6g.mp3" preload="auto"></audio>
+<audio id="sndHome" src="romanceeeeeeeeeeeeee_4_6w2p.mp3" preload="auto"></audio>
 <script>
 (function(){
 "use strict";
@@ -815,6 +818,26 @@ function renderPawns(){
    groups[key].push({el:el,p:p,t:t,x:pt.x,y:pt.y});
   }
  }
+ // Capture opportunities: for each movable pawn, the victims its move
+ // would take (destination on the main track only — home-lane moves
+ // cannot capture). The mover gets a ring in its own colour, each
+ // victim a red "targeted" ring, so the player can see the capture
+ // before choosing. Recomputed every render, so it never goes stale.
+ var capMap={}, targeted={};
+ if(state.phase==="move"&&state.movable){
+  state.movable.forEach(function(m){
+   var from=state.players[m.p].steps[m.t];
+   var dest=(from===-1)?0:from+state.dice;
+   if(dest<0||dest>50){return;}
+   var col=playerSet(state.n)[m.p];
+   var abs=(START_IDX[col]+dest)%52;
+   var vs=findVictims(abs,m.p);
+   if(vs.length){
+    capMap[m.p+"-"+m.t]=vs;
+    vs.forEach(function(v){targeted[v.p+"-"+v.t]=true;});
+   }
+  });
+ }
  Object.keys(groups).forEach(function(key){
   var g=groups[key];
   var off=[[-1.7,-1.7],[1.7,-1.7],[-1.7,1.7],[1.7,1.7],[0,0]];
@@ -824,6 +847,10 @@ function renderPawns(){
    item.el.style.top=(item.y+o[1])+"%";
    var mov=state.phase==="move"&&state.turn===item.p&&state.movable.some(function(m){return m.p===item.p&&m.t===item.t;});
    item.el.classList.toggle("movable",!!mov);
+   var cap=capMap[item.p+"-"+item.t];
+   item.el.classList.toggle("canCapture",!!cap);
+   if(cap){item.el.style.setProperty("--cap",COLORS[playerSet(state.n)[item.p]].hex);}
+   item.el.classList.toggle("targeted",!!targeted[item.p+"-"+item.t]);
   });
  });
 }
@@ -936,6 +963,7 @@ function startGame(){
  $("game").classList.remove("hidden");
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
  setBoardOrientation(); // Together mode: unrotated; a rotated board from an earlier online game is reset
+ playSound("sndHome"); // game start: the "I'm going to go home" sound
 }
 function computeMovable(){
  var mov=[];
@@ -1017,18 +1045,25 @@ async function rollDice(){
  broadcast();
  rolling=false;
 }
-function findVictim(absIdx,ownerSeat){
- if(SAFE[absIdx]){return null;}
+// Every opponent token on a square (standard Ludo captures all of them,
+// not just the first). Returns [] on a safe square.
+function findVictims(absIdx,ownerSeat){
+ if(SAFE[absIdx]){return [];}
+ var out=[];
  var ownerCol=playerSet(state.n)[ownerSeat];
  for(var p=0;p<state.n;p++){
   if(p===ownerSeat||state.left[p]){continue;}
   var col=playerSet(state.n)[p];
   for(var t=0;t<4;t++){
    var st=state.players[p].steps[t];
-   if(st>=0&&st<=50&&(START_IDX[col]+st)%52===absIdx){return {p:p,t:t};}
+   if(st>=0&&st<=50&&(START_IDX[col]+st)%52===absIdx){out.push({p:p,t:t});}
   }
  }
- return null;
+ return out;
+}
+function findVictim(absIdx,ownerSeat){
+ var vs=findVictims(absIdx,ownerSeat);
+ return vs.length?vs[0]:null;
 }
 async function onTokenTap(p,t){
  if(!state||state.phase!=="move"){return;}
@@ -1146,56 +1181,63 @@ async function applyMove(p,t){
  var finalSt=fromSt===-1?0:fromSt+dice;
  var extra=(dice===6);
  var col=playerSet(state.n)[p];
- var victim=null;
+ var victims=[];
  state.players[p].steps[t]=finalSt;
  state.phase="anim";
  state.movable=[];
  if(finalSt>=0&&finalSt<=50){
   var abs=(START_IDX[col]+finalSt)%52;
-  victim=findVictim(abs,p);
-  if(victim){
+  victims=findVictims(abs,p);
+  if(victims.length){
    extra=true;
-   state.players[victim.p].steps[victim.t]=-1;
+   victims.forEach(function(v){state.players[v.p].steps[v.t]=-1;});
    playSound("sndKill");
   }
  }
  var won=state.players[p].steps.every(function(x){return x===FINISH;});
  renderHud();
  await glidePawn(p,t,fromSt,finalSt);
- if(victim){
-  var vg=$("pawn-"+victim.p+"-"+victim.t);
+ if(victims.length){
   var ag=$("pawn-"+p+"-"+t);
-  var vcol=playerSet(state.n)[victim.p];
   var acol=playerSet(state.n)[p];
   var apt=cellPct(tokenRC(col,finalSt,t));
-  var homePt=cellPct(YARD_SLOTS[vcol][victim.t]);
-  // Phase 1 — impact (0-0.3s): attacker bounce, glow beneath it, victim flash.
+  var vgs=victims.map(function(v){return $("pawn-"+v.p+"-"+v.t);});
+  // Phase 1 — impact (0-0.3s): attacker bounce, glow beneath it, every victim flashes.
   var glow1=capGlowAt(apt,COLORS[acol].hex,false);
   if(ag){ag.classList.add("cap-bounce");}
-  if(vg){vg.classList.add("cap-flash");}
+  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
   await sleep(300);
   if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
   if(ag){ag.classList.remove("cap-bounce");}
-  if(vg){vg.classList.remove("cap-flash");}
-  // Phase 2 — capture (0.3-0.8s): victim shrinks upward and dissolves into particles.
-  var parts=capParticles(apt,COLORS[vcol].hex);
-  if(vg){vg.classList.add("cap-shrink");}
+  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-flash");}});
+  // Phase 2 — capture (0.3-0.8s): every victim shrinks upward and dissolves into particles.
+  var parts=[];
+  victims.forEach(function(v){
+   parts=parts.concat(capParticles(apt,COLORS[playerSet(state.n)[v.p]].hex));
+  });
+  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-shrink");}});
   await sleep(450);
   parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
-  // Phase 3 — return home (0.8-1.3s): instant jump to the yard slot, scale up, soft glow.
-  if(vg){
-   vg.classList.remove("cap-shrink");
-   vg.classList.add("cap-jump");
-   vg.style.left=homePt.x+"%";
-   vg.style.top=homePt.y+"%";
-   void vg.offsetWidth;
-   vg.classList.remove("cap-jump");
-   vg.classList.add("cap-grow");
-  }
-  var glow2=capGlowAt(homePt,COLORS[vcol].hex,true);
+  // Phase 3 — return home (0.8-1.3s): each victim jumps to its own yard slot, scale up, soft glow.
+  var glow2s=[];
+  victims.forEach(function(v,i){
+   var vg=vgs[i];
+   var vcol=playerSet(state.n)[v.p];
+   var homePt=cellPct(YARD_SLOTS[vcol][v.t]);
+   if(vg){
+    vg.classList.remove("cap-shrink");
+    vg.classList.add("cap-jump");
+    vg.style.left=homePt.x+"%";
+    vg.style.top=homePt.y+"%";
+    void vg.offsetWidth;
+    vg.classList.remove("cap-jump");
+    vg.classList.add("cap-grow");
+   }
+   glow2s.push(capGlowAt(homePt,COLORS[vcol].hex,true));
+  });
   await sleep(500);
-  if(glow2&&glow2.parentNode){glow2.parentNode.removeChild(glow2);}
-  if(vg){vg.classList.remove("cap-grow");}
+  glow2s.forEach(function(g2){if(g2&&g2.parentNode){g2.parentNode.removeChild(g2);}});
+  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-grow");}});
  }
  renderAll();
  if(won){
@@ -1442,7 +1484,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="525";
+var APP_VERSION="526";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -1702,6 +1744,7 @@ function onServerState(m){
  applyNetState(s);
 }
 function playNetEventSound(ev){
+ if(ev.kind==="start"){playSound("sndHome");} // game start: the "I'm going to go home" sound
  if(ev.firstSix){playSound("sndFirst6");} // roll or no-move: the first 6 of the game
  if(ev.kind==="win"){beep(880,0.25);}
 }
@@ -1724,39 +1767,47 @@ async function animateNetMove(ev,s){
  if(ev.kind==="capture"){playSound("sndKill");}
  state.phase="anim"; state.movable=[];
  await glidePawn(p,t,fromSt,finalSt);
- if(ev.kind==="capture"&&ev.victim){
-  var vg=$("pawn-"+ev.victim.p+"-"+ev.victim.t);
+ var victims=(ev.kind==="capture")?(ev.victims||(ev.victim?[ev.victim]:[])):[];
+ if(victims.length){
   var ag=$("pawn-"+p+"-"+t);
-  var vcol=playerSet(state.n)[ev.victim.p];
   var acol=playerSet(state.n)[p];
   var apt=cellPct(tokenRC(col,finalSt,t));
-  var homePt=cellPct(YARD_SLOTS[vcol][ev.victim.t]);
+  var vgs=victims.map(function(v){return $("pawn-"+v.p+"-"+v.t);});
   var glow1=capGlowAt(apt,COLORS[acol].hex,false);
   if(ag){ag.classList.add("cap-bounce");}
-  if(vg){vg.classList.add("cap-flash");}
+  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
   await sleep(300);
   if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
   if(ag){ag.classList.remove("cap-bounce");}
-  if(vg){vg.classList.remove("cap-flash");}
-  var parts=capParticles(apt,COLORS[vcol].hex);
-  if(vg){vg.classList.add("cap-shrink");}
+  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-flash");}});
+  var parts=[];
+  victims.forEach(function(v){
+   parts=parts.concat(capParticles(apt,COLORS[playerSet(state.n)[v.p]].hex));
+  });
+  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-shrink");}});
   await sleep(450);
   parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
-  // Apply the new state now: the victim jumps to its yard slot.
+  // Apply the new state now: each victim jumps to its own yard slot.
   applyNetState(s);
-  if(vg){
-   vg.classList.remove("cap-shrink");
-   vg.classList.add("cap-jump");
-   vg.style.left=homePt.x+"%";
-   vg.style.top=homePt.y+"%";
-   void vg.offsetWidth;
-   vg.classList.remove("cap-jump");
-   vg.classList.add("cap-grow");
-  }
-  var glow2=capGlowAt(homePt,COLORS[vcol].hex,true);
+  var glow2s=[];
+  victims.forEach(function(v,i){
+   var vg=vgs[i];
+   var vcol=playerSet(state.n)[v.p];
+   var homePt=cellPct(YARD_SLOTS[vcol][v.t]);
+   if(vg){
+    vg.classList.remove("cap-shrink");
+    vg.classList.add("cap-jump");
+    vg.style.left=homePt.x+"%";
+    vg.style.top=homePt.y+"%";
+    void vg.offsetWidth;
+    vg.classList.remove("cap-jump");
+    vg.classList.add("cap-grow");
+   }
+   glow2s.push(capGlowAt(homePt,COLORS[vcol].hex,true));
+  });
   await sleep(500);
-  if(glow2&&glow2.parentNode){glow2.parentNode.removeChild(glow2);}
-  if(vg){vg.classList.remove("cap-grow");}
+  glow2s.forEach(function(g2){if(g2&&g2.parentNode){g2.parentNode.removeChild(g2);}});
+  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-grow");}});
  }else{
   applyNetState(s);
  }
