@@ -1325,7 +1325,25 @@ function copyText(txt,done){
   else{fallback();}
  }else{fallback();}
 }
-function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode;}
+// Cache-buster for the invite link: a friend opening the shared link must
+// get THIS build, not a stale copy their phone cached (an old cached build
+// can sit on "Joining…" forever — the 25s watchdog only exists in V5.9+).
+// Bump on every release.
+var APP_VERSION="515";
+// PeerJS connection config. STUN alone is not enough: when two phones sit
+// behind symmetric NAT (common on mobile data), a direct P2P connection
+// never opens and the guest's join dies silently after 15s ("Could not find
+// that room" while the host is alive). A TURN relay gives those pairs a
+// path. openrelay.metered.ca is the Open Relay Project's public demo TURN
+// (no signup); if it ever gets slow, swap in a private TURN (e.g. Metered
+// free tier with your own key) here — one place fixes every peer.
+var PEER_CONFIG={config:{iceServers:[
+ {urls:"stun:stun.l.google.com:19302"},
+ {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
+ {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
+ {urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}
+]}};
+function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode+"&v="+APP_VERSION;}
 function leaveRoom(){
  if(isHost&&conns.length){conns.forEach(function(c){try{c.conn.send({type:"host-left"});}catch(e){}});}
  else{sendToHost({type:"bye"});}
@@ -1550,7 +1568,7 @@ function tryCreate(attempt,fixedCode,onFail){
  var btn=$("createBtn");
  roomCode=fixedCode||makeCode();
  setRoomStatus("Creating room…");
- peer=new Peer("ludo-"+roomCode);
+ peer=new Peer("ludo-"+roomCode,PEER_CONFIG);
  peerOpenTimer=setTimeout(function(){
   peerOpenTimer=null;
   var p=peer;peer=null;
@@ -1783,7 +1801,7 @@ function tryJoin(code,opts){
  var btn=$("joinBtn");
  var joined=false;
  var failed=false;
- peer=new Peer();
+ peer=new Peer(PEER_CONFIG);
  peerOpenTimer=setTimeout(function(){
   peerOpenTimer=null;
   if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
@@ -2046,7 +2064,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
 })();
 </script>
 </body>
