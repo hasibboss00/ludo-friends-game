@@ -408,6 +408,7 @@ var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
 var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
 var hbTimer=null, guestHbTimer=null, lastHostMsg=0;
 var HB_INTERVAL=5000, HB_DEAD=15000;
+var joining=false, joinWatchdog=null;
 var ROOM_KEY="ludoRoom";
 var seatCid={};
 function getClientId(){
@@ -1324,6 +1325,10 @@ function scheduleReconnect(){
 }
 function attemptReconnect(){
  if(!roomRole){reconnecting=false;return;}
+ // A fresh Join is in flight — its peer/timers are shared globals, so a
+ // restore attempt here would destroyPeer() the new join mid-flight and
+ // wipe its timers, stranding the button on "Joining…" forever.
+ if(joining){return;}
  if(reconnectTries>=3){
   reconnecting=false;
   setLobbyStatus("Connection lost — could not reconnect.");
@@ -1399,11 +1404,15 @@ function ensurePeer(cb){
  function fin(ok){if(done){return;}done=true;cb(ok);}
  s.onload=function(){fin(typeof Peer!=="undefined");};
  s.onerror=function(){fin(false);};
+ // A stalled CDN fetch fires neither onload nor onerror — without this the
+ // Create/Join button would sit on "Creating…"/"Joining…" forever.
+ setTimeout(function(){fin(false);},10000);
  (document.head||document.documentElement).appendChild(s);
 }
 function createRoom(){
  var btn=$("createBtn");
  destroyPeer();
+ cancelStaleRestore();
  roomRole=null;peerDown=false;hostLeftSeen=false;
  seatCid={};
  $("roomCode").textContent="";
@@ -1607,10 +1616,16 @@ function onGuestLeft(seat){
 }
 function joinRoom(){
  var btn=$("joinBtn");
+ // Double/triple taps are normal: while a join is in flight, ignore every
+ // further tap. The button stays disabled on "Joining…" until the welcome
+ // arrives (or the join fails), so a 2nd tap can never start a second join.
+ if(joining){return;}
  var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
  if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
  destroyPeer();
+ cancelStaleRestore();
  roomRole=null;peerDown=false;hostLeftSeen=false;
+ joining=true;
  $("roomCode").textContent="";
  setRoomStatus("");
  myName=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
@@ -1618,8 +1633,17 @@ function joinRoom(){
  roomCode=code;
  if(btn){btn.disabled=true;btn.textContent="Joining…";}
  setRoomStatus("Joining…");
+ // Hard deadline: no join path may strand the button on "Joining…" — if no
+ // seat (welcome) arrived in 25s, fail loudly so the user can retry.
+ if(joinWatchdog){clearTimeout(joinWatchdog);}
+ joinWatchdog=setTimeout(function(){
+  joinWatchdog=null;
+  if(mySeat<0){failJoin("Join holo na — abar Join chap dao.");}
+ },25000);
  ensurePeer(function(ok){
   if(!ok){
+   joining=false;
+   if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
    resetJoinBtn();
    setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
    updateStart();
@@ -1628,6 +1652,14 @@ function joinRoom(){
   setRoomStatus("Joining…");
   tryJoin(code,{});
  });
+}
+function cancelStaleRestore(){
+ // A restore loop left over from a previous room (page-load restore, or a
+ // retry timer still pending) shares the same peer/timer globals as a fresh
+ // Create/Join. If its retry fires mid-join it destroyPeer()s the new join
+ // and wipes its timers. Kill it before starting anything new.
+ if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ reconnecting=false; reconnectTries=0;
 }
 function tryJoin(code,opts){
  opts=opts||{};
@@ -1643,6 +1675,10 @@ function tryJoin(code,opts){
  function failJoin(msg){
   if(failed){return;}
   failed=true;
+  joining=false;
+  if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
+  reconnecting=false; reconnectTries=0;
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
   roomRole=null;
   destroyPeer();
   clearRoomSession();
@@ -1684,6 +1720,10 @@ function tryJoin(code,opts){
    if(msg.type==="ping"){try{hostConn.send({type:"pong"});}catch(e){}return;}
    if(msg.type==="welcome"){
     if(welcomeTimer){clearTimeout(welcomeTimer);welcomeTimer=null;}
+    joining=false;
+    if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
+    reconnecting=false; reconnectTries=0;
+    resetJoinBtn();
     mySeat=msg.seat;menuN=msg.n;updateStart();renderLobby();
     if(reconnecting){reconnectDone();}
    }
@@ -1708,7 +1748,10 @@ function tryJoin(code,opts){
    clearRoomTimers();
    startGuestWatchdog();
    roomRole="guest";
-   if(btn){btn.disabled=false;btn.textContent="Join";}
+   // NOTE: the Join button stays disabled on "Joining…" here on purpose.
+   // The join is NOT done until the host's welcome arrives (mySeat set).
+   // Re-enabling the button now lets a 2nd tap start a second join that
+   // destroyPeer()s this one mid-flight — that is the double-tap bug.
    $("joinBtn").classList.add("sel");
    setRoomStatus("Joined room");
    saveRoomSession();
