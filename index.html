@@ -156,8 +156,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #turnPill .dot{width:14px;height:14px;border-radius:50%;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.5)}
 #diceBox{width:76px;height:76px;border-radius:18px;background:linear-gradient(145deg,#fff,#D9D9EA);box-shadow:0 12px 26px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.9),inset 0 -3px 6px rgba(0,0,0,.14);cursor:pointer;display:grid;place-items:center;border:0;padding:0}
 #diceBox:disabled{opacity:1;cursor:default}
-#diceBox.tumble{animation:tumble .5s ease}
-@keyframes tumble{0%{transform:rotate(0) scale(1)}25%{transform:rotate(100deg) scale(1.12)}55%{transform:rotate(220deg) scale(.94)}80%{transform:rotate(310deg) scale(1.06)}100%{transform:rotate(360deg) scale(1)}}
+.diceScene{width:52px;height:52px;perspective:320px}
+.diceCube{position:relative;width:52px;height:52px;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.7,.3,1)}
+.dface{position:absolute;inset:0;border:1px solid rgba(0,0,0,.08);border-radius:9px;box-shadow:inset 0 2px 3px rgba(255,255,255,.9),inset 0 -3px 5px rgba(0,0,0,.1);backface-visibility:hidden}
+.dface i{position:absolute;width:9px;height:9px;border-radius:50%;background:#1A1A2E;transform:translate(-50%,-50%);box-shadow:inset 0 1px 2px rgba(255,255,255,.35)}
+.dface.f6{transform:rotateY(0deg) translateZ(26px);background:linear-gradient(145deg,#fff,#EDEDF5)}
+.dface.f1{transform:rotateY(180deg) translateZ(26px);background:linear-gradient(145deg,#E8E8F0,#D5D5E0)}
+.dface.f3{transform:rotateY(90deg) translateZ(26px);background:linear-gradient(145deg,#F2F2F8,#DCDCE6)}
+.dface.f4{transform:rotateY(-90deg) translateZ(26px);background:linear-gradient(145deg,#E2E2EC,#CFCFDB)}
+.dface.f2{transform:rotateX(90deg) translateZ(26px);background:linear-gradient(145deg,#fff,#F0F0F6)}
+.dface.f5{transform:rotateX(-90deg) translateZ(26px);background:linear-gradient(145deg,#D8D8E2,#C4C4D0)}
 #rollBtn{padding:17px 26px;border:0;border-radius:16px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:17px;font-weight:900;letter-spacing:1px;cursor:pointer;font-family:inherit;box-shadow:0 12px 26px rgba(123,47,247,.5);display:flex;align-items:center;gap:9px}
 #rollBtn:disabled{opacity:.45;cursor:default;box-shadow:none}
 #muteBtn{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);color:#fff;cursor:pointer;display:grid;place-items:center;padding:0}
@@ -401,7 +409,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
         </div>
         <div id="controlBar">
           <div id="turnPill"><span class="dot" id="turnDot"></span><span id="turnText"></span></div>
-          <button id="diceBox" aria-label="Dice"></button>
+          <button id="diceBox" aria-label="Dice"><div class="diceScene"><div class="diceCube" id="diceCube"><div class="dface f6"><i style="left:32%;top:28%"></i><i style="left:68%;top:28%"></i><i style="left:32%;top:50%"></i><i style="left:68%;top:50%"></i><i style="left:32%;top:72%"></i><i style="left:68%;top:72%"></i></div><div class="dface f1"><i style="left:50%;top:50%"></i></div><div class="dface f3"><i style="left:30%;top:30%"></i><i style="left:50%;top:50%"></i><i style="left:70%;top:70%"></i></div><div class="dface f4"><i style="left:32%;top:32%"></i><i style="left:68%;top:32%"></i><i style="left:32%;top:68%"></i><i style="left:68%;top:68%"></i></div><div class="dface f2"><i style="left:32%;top:32%"></i><i style="left:68%;top:68%"></i></div><div class="dface f5"><i style="left:30%;top:30%"></i><i style="left:70%;top:30%"></i><i style="left:50%;top:50%"></i><i style="left:30%;top:70%"></i><i style="left:70%;top:70%"></i></div></div></div></button>
           <button id="rollBtn"><svg width="20" height="20" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="20" fill="#fff"/><circle cx="30" cy="30" r="10" fill="#7B2FF7"/><circle cx="70" cy="30" r="10" fill="#7B2FF7"/><circle cx="50" cy="50" r="10" fill="#7B2FF7"/><circle cx="30" cy="70" r="10" fill="#7B2FF7"/><circle cx="70" cy="70" r="10" fill="#7B2FF7"/></svg>Roll Dice</button>
           <button id="muteBtn" aria-label="Sound"></button>
         </div>
@@ -648,6 +656,33 @@ function diceFaceSVG(v){
  var s='<svg width="52" height="52" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="18" fill="#fff"/>';
  map[v].forEach(function(pt){s+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="9" fill="#1A1A2E"/>';});
  return s+"</svg>";
+}
+// --- 3D dice cube (V5.30) ---
+// One cube, six faces, opposite faces sum to 7 (1-6, 2-5, 3-4). DICE_ROT
+// gives the cube rotation that brings a face to the front; showDice spins
+// the cube forward (never backwards, at least one full extra turn) and
+// always lands on the true result — the server's roll online, rollFairDie
+// locally. The landed face is never a fake or independently generated one.
+var DICE_ROT={1:[0,180],2:[-90,0],3:[0,-90],4:[0,90],5:[90,0],6:[0,0]};
+var diceSpin={x:0,y:0};
+function showDice(v,animate){
+ var cube=$("diceCube");
+ if(!cube){return;}
+ var t=DICE_ROT[v]||[0,0];
+ if(!animate){
+  diceSpin.x=Math.round(diceSpin.x/360)*360+t[0];
+  diceSpin.y=Math.round(diceSpin.y/360)*360+t[1];
+  cube.style.transition="transform 0s";
+  cube.style.transform="rotateX("+diceSpin.x+"deg) rotateY("+diceSpin.y+"deg)";
+  return;
+ }
+ var tx=t[0],ty=t[1];
+ while(tx<diceSpin.x){tx+=360;}
+ while(ty<diceSpin.y){ty+=360;}
+ tx+=360;ty+=360; // one full extra turn so the spin is visible
+ diceSpin.x=tx;diceSpin.y=ty;
+ cube.style.transition="transform .55s cubic-bezier(.2,.7,.3,1)";
+ cube.style.transform="rotateX("+tx+"deg) rotateY("+ty+"deg)";
 }
 function yardAt(r,c){
  if(r<6&&c<6)return 0;
@@ -931,6 +966,7 @@ function renderHud(){
 function renderAll(){if(!state){return;}renderPawns();renderHud();}
 function beep(freq,dur){
  if(muted){return;}
+ ensureAudio();
  try{
   if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();}
   var o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -941,10 +977,34 @@ function beep(freq,dur){
   o.start(); o.stop(audioCtx.currentTime+dur);
  }catch(e){}
 }
+// --- Central audio manager (V5.30) ---
+// One entry point for every sound. The three mp3s are persistent <audio>
+// elements (never a new Audio per event); beeps share one AudioContext.
+// ensureAudio creates/resumes the context (browsers suspend it until a
+// user gesture); playSound restarts a sound from the top so a rapid
+// re-trigger is heard, and drops the same sound twice within 120ms (a
+// duplicate trigger, e.g. a double event) instead of overlapping it.
+var lastPlay={};
+function ensureAudio(){
+ try{
+  if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();}
+  if(audioCtx.state==="suspended"){audioCtx.resume();}
+ }catch(e){}
+}
 function playSound(id){
  if(muted){return;}
+ ensureAudio();
  var a=$(id);
- if(a){try{a.volume=settingsVolume();var pr=a.play(); if(pr&&pr.catch){pr.catch(function(){});}}catch(e){}}
+ if(!a){return;}
+ try{
+  var now=Date.now();
+  if(lastPlay[id]&&now-lastPlay[id]<120){return;}
+  lastPlay[id]=now;
+  a.volume=settingsVolume();
+  try{a.currentTime=0;}catch(e){} // restart so a rapid re-trigger is heard
+  var pr=a.play();
+  if(pr&&pr.catch){pr.catch(function(){});}
+ }catch(e){}
 }
 // --- Settings (V5.29): graphics quality, volumes, mute — persisted ---
 // Quality is applied as a class on #app (q-low / q-balanced / q-high) so
@@ -1039,7 +1099,7 @@ function newGame(n,mode,names){
  buildBoard();
  buildPawns();
  renderAll();
- $("diceBox").innerHTML=diceFaceSVG(6);
+ showDice(6,false);
  $("winOverlay").classList.add("hidden");
  startTimer();
  resetTurnTimer();
@@ -1099,11 +1159,9 @@ async function rollDice(){
  var btn=$("diceBox");
  btn.disabled=true;
  $("rollBtn").disabled=true;
- btn.classList.add("tumble");
- for(var i=0;i<5;i++){btn.innerHTML=diceFaceSVG(1+Math.floor(Math.random()*6));await sleep(90);}
- btn.classList.remove("tumble");
  state.dice=rollFairDie();
- btn.innerHTML=diceFaceSVG(state.dice);
+ showDice(state.dice,true);
+ await sleep(600); // let the cube land before the move phase opens
  setLastRoll(state.turn,state.dice);
  state.rollId=(state.rollId||0)+1;
  // Dice log is still recorded in the state (and broadcast), but the screen
@@ -1405,16 +1463,14 @@ function broadcast(){
 }
 var lastRollId=-1, diceTumbling=false, diceTumbleTarget=0;
 async function guestDiceTumble(target){
- // Same tumble the host's own button shows: 5 quick random faces, then land
- // on the real rolled number. A roll arriving mid-tumble just retargets the
- // landing face instead of starting a second animation.
+ // The cube spins and lands on the server's rolled number. A roll arriving
+ // mid-spin just retargets the landing face instead of starting a second
+ // animation.
  if(diceTumbling){diceTumbleTarget=target;return;}
  diceTumbling=true; diceTumbleTarget=target;
- var btn=$("diceBox");
- btn.classList.add("tumble");
- for(var i=0;i<5;i++){btn.innerHTML=diceFaceSVG(1+Math.floor(Math.random()*6));await sleep(90);}
- btn.classList.remove("tumble");
- btn.innerHTML=diceFaceSVG(diceTumbleTarget);
+ showDice(target,true);
+ await sleep(600);
+ if(diceTumbleTarget!==target){showDice(diceTumbleTarget,true);await sleep(600);}
  diceTumbling=false;
 }
 // The latest roll, in words, for everyone to see: "Alvi rolled 4". It stays
@@ -1437,7 +1493,7 @@ function applyNetState(s){
   buildBoard();
   buildPawns();
   setBoardOrientation(); // the board appears rotated for this player's seat
-  $("diceBox").innerHTML=diceFaceSVG(6);
+  showDice(6,false);
   lastRollId=-1;
   $("winOverlay").classList.add("hidden");
   if(s.rollId===0){startTimer();} // a fresh game: the match clock runs for everyone
@@ -1459,7 +1515,7 @@ function applyNetState(s){
  }else if(!diceTumbling&&s.dice>=1&&s.dice<=6){
   // Re-broadcast of the same roll (e.g. after a token move): keep the face
   // on the rolled number without replaying the tumble.
-  $("diceBox").innerHTML=diceFaceSVG(s.dice);
+  showDice(s.dice,false);
  }
  // dice===0 (turn just passed) deliberately leaves the face alone, so the
  // last rolled number stays visible instead of snapping back to 6.
@@ -1587,7 +1643,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="529";
+var APP_VERSION="530";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -2207,11 +2263,12 @@ $("qHigh").addEventListener("click",function(){setQuality("high");});
 $("volMaster").addEventListener("input",function(){settings.master=Math.max(0,Math.min(1,parseFloat($("volMaster").value)/100||0));storeSet("ludoMaster",String(settings.master));applySettings();});
 $("volSfx").addEventListener("input",function(){settings.sfx=Math.max(0,Math.min(1,parseFloat($("volSfx").value)/100||0));storeSet("ludoSfx",String(settings.sfx));applySettings();});
 $("muteToggle").addEventListener("click",function(){setMuted(!muted);});
+document.addEventListener("pointerdown",ensureAudio); // unlock audio on first tap
 function startWith(n){
  menuN=n;menuMode="together";isHost=false;mySeat=-1;roomRole=null;
  startGame();
 }
-$("diceBox").innerHTML=diceFaceSVG(6);
+showDice(6,false);
 buildHeroBoard();
 renderTopPlayers();
 renderNameInputs();
@@ -2258,7 +2315,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio};
 })();
 </script>
 </body>
