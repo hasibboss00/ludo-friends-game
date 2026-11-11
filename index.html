@@ -104,13 +104,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #centre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:conic-gradient(from 315deg,#00B25E 0deg 90deg,#F2A600 90deg 180deg,#0B5BE6 180deg 270deg,#E8112D 270deg 360deg);box-shadow:inset 0 0 0 2px #fff;display:grid;place-items:center;z-index:1}
 #centre span{color:#fff;font-size:clamp(12px,3vw,22px);text-shadow:0 1px 3px rgba(0,0,0,.4)}
 #pawnLayer{position:absolute;inset:0;z-index:3;pointer-events:none}
-.pawn{position:absolute;width:7.4%;aspect-ratio:1/1;transform:translate(-50%,-52%);transition:left .12s ease-in-out,top .12s ease-in-out,opacity .3s ease;pointer-events:auto;cursor:pointer;z-index:3}
+.pawn{position:absolute;width:7.4%;aspect-ratio:1/1;transform:translate(-50%,-52%) rotate(var(--spin,0deg));transition:left .12s ease-in-out,top .12s ease-in-out,opacity .3s ease;pointer-events:auto;cursor:pointer;z-index:3}
 .pawn svg{width:100%;height:100%;display:block;filter:drop-shadow(0 3px 3px rgba(0,0,0,.35))}
 .pawn.movable{cursor:pointer;z-index:4}
 .pawn.movable::before{content:"";position:absolute;inset:-22%;border:3px solid #fff;border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 14px rgba(255,255,255,.9)}
 @keyframes pulseRing{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
 .pawn.cap-bounce{animation:capBounce .3s cubic-bezier(.34,1.56,.64,1)}
-@keyframes capBounce{0%{transform:translate(-50%,-52%) translateY(0)}40%{transform:translate(-50%,-52%) translateY(-4px)}100%{transform:translate(-50%,-52%) translateY(0)}}
+@keyframes capBounce{0%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(0)}40%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(-4px)}100%{transform:translate(-50%,-52%) rotate(var(--spin,0deg)) translateY(0)}}
 .pawn.cap-flash svg{animation:capFlash .3s ease}
 @keyframes capFlash{0%,100%{filter:brightness(1) drop-shadow(0 3px 3px rgba(0,0,0,.35))}50%{filter:brightness(1.9) drop-shadow(0 3px 3px rgba(0,0,0,.35))}}
 .pawn.cap-shrink svg{transform:translateY(-12px) scale(0);opacity:0;transition:transform .45s cubic-bezier(.55,.06,.68,.19),opacity .45s ease}
@@ -732,13 +732,46 @@ function cardEl(seat){
  el.appendChild(av); el.appendChild(wrap); el.appendChild(md);
  return el;
 }
+// --- Player-centric board orientation (V5.23) ---
+// The LOGICAL game never rotates: TRACK, START_IDX, token steps, turn order
+// and the server state are identical on every device. Only the PRESENTATION
+// rotates, so each player sees their own yard at the bottom (bottom-left,
+// the Ludo King "you" spot) with the other yards following clockwise.
+// Corners, clockwise: 0 = top-left, 1 = top-right, 2 = bottom-right,
+// 3 = bottom-left. A clockwise CSS rotate of 90*k moves corner c to corner
+// (c+k)%4, so k = (3 - myCorner) % 4 puts my yard at the bottom. The board
+// is square, so rotating it in place never overflows. Pawns stay upright
+// through the --spin variable (see the .pawn rule and capBounce keyframes),
+// and the win card is counter-rotated so it never appears sideways.
+// Together mode has no single viewing player: it stays unrotated.
+var boardK=0, boardDeg=0;
+function boardRotationK(){
+ if(!state||state.mode!=="online"||mySeat<0||mySeat>=state.n){return 0;}
+ var myCorner=playerSet(state.n)[mySeat];
+ return (3-myCorner+4)%4;
+}
+function setBoardOrientation(){
+ var k=boardRotationK();
+ boardK=k; boardDeg=k*90;
+ var b=$("board");
+ if(b){
+  b.style.transform=boardDeg?("rotate("+boardDeg+"deg)"):"";
+  b.style.setProperty("--spin",(-boardDeg)+"deg");
+ }
+ var wo=$("winOverlay");
+ if(wo){wo.style.transform=boardDeg?("rotate("+(-boardDeg)+"deg)"):"";}
+}
 function buildCards(){
+ setBoardOrientation(); // the card columns follow the rotated board
  var set=playerSet(state.n);
  var leftWrap=$("cardsLeft"), rightWrap=$("cardsRight"), chipWrap=$("chipRow");
  leftWrap.innerHTML=""; rightWrap.innerHTML=""; chipWrap.innerHTML="";
  set.forEach(function(ci,seat){
   var el=cardEl(seat);
-  if(ci===0||ci===3){leftWrap.appendChild(el);}else{rightWrap.appendChild(el);}
+  // After rotation, corner (ci+boardK)%4 is where this player's yard sits:
+  // left column = the two left-side corners (top-left 0, bottom-left 3).
+  var corner=(ci+boardK)%4;
+  if(corner===0||corner===3){leftWrap.appendChild(el);}else{rightWrap.appendChild(el);}
   chipWrap.appendChild(cardEl(seat));
  });
 }
@@ -900,6 +933,7 @@ function startGame(){
  $("homeView").classList.add("hidden");
  $("game").classList.remove("hidden");
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
+ setBoardOrientation(); // Together mode: unrotated; a rotated board from an earlier online game is reset
 }
 function computeMovable(){
  var mov=[];
@@ -1208,6 +1242,7 @@ function applyNetState(s){
   $("game").classList.remove("hidden");
   buildBoard();
   buildPawns();
+  setBoardOrientation(); // the board appears rotated for this player's seat
   $("diceBox").innerHTML=diceFaceSVG(6);
   lastRollId=-1;
   $("winOverlay").classList.add("hidden");
@@ -1358,7 +1393,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="522";
+var APP_VERSION="523";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -1503,6 +1538,7 @@ function onSrvMsg(m){
   if(wsHelloTimer){clearTimeout(wsHelloTimer);wsHelloTimer=null;}
   wsAction=null; wsRetryCount=0;
   roomCode=m.code; mySeat=0; menuN=m.n||menuN; roomRole="host"; isHost=true;
+  setBoardOrientation(); // host is seat 0: the board turns so red sits at the bottom
   joining=false; reconnecting=false; restoring=false;
   clearJoinTimers();
   resetCreateBtn(); resetJoinBtn();
@@ -1520,6 +1556,7 @@ function onSrvMsg(m){
   clearJoinTimers();
   resetJoinBtn(); resetCreateBtn();
   mySeat=m.seat; menuN=m.n||menuN;
+  setBoardOrientation(); // my seat is known: turn the board so my yard is at the bottom
   roomRole=(m.seat===0)?"host":"guest";
   if(m.cid){try{localStorage.setItem("ludoClient",m.cid);}catch(e){}}
   saveRoomSession();
@@ -2007,7 +2044,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin};
 })();
 </script>
 </body>
