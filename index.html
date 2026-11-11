@@ -18,7 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #menu{width:100%;max-width:460px;margin:7vh auto 0;background:rgba(28,16,51,.82);border:1px solid rgba(168,85,247,.45);border-radius:28px;box-shadow:0 24px 60px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04) inset;padding:34px 28px 30px;text-align:center;backdrop-filter:blur(10px)}
 #menu .diceMark{display:inline-grid;place-items:center;width:58px;height:58px;border-radius:16px;background:linear-gradient(145deg,#fff,#d9d9ea);box-shadow:0 10px 24px rgba(0,0,0,.45),0 0 22px rgba(168,85,247,.55);margin:0 auto 10px}
 #menu h1{margin:0;font-size:56px;font-weight:900;letter-spacing:18px;text-indent:18px;line-height:1;background:linear-gradient(90deg,#FFD54F,#FF9A00);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-#menu .rule{width:60px;height:4px;border-radius:2px;background:linear-gradient(90deg,#E53935,#FDD835,#43A047,#1E88E5);margin:16px auto 6px}
+#menu .rule{width:60px;height:4px;border-radius:2px;background:linear-gradient(90deg,#E8112D,#F2A600,#00B25E,#0B5BE6);margin:16px auto 6px}
 .lbl{font-size:11px;font-weight:800;letter-spacing:3px;color:#B9A8E8;text-transform:uppercase;margin:20px 0 10px}
 .pills{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .pill{min-width:54px;height:54px;padding:0 16px;border-radius:16px;border:2px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);font-size:19px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit}
@@ -97,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .yard.neutral{background:#241D45;box-shadow:inset 0 0 0 2px rgba(255,255,255,.08)}
 .yard.neutral .inner{background:#1A1533;box-shadow:none}
 .slot{position:absolute;width:14%;height:14%;border-radius:50%;border:2px solid;cursor:pointer;z-index:2}
-#centre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:conic-gradient(from 315deg,#43A047 0deg 90deg,#FDD835 90deg 180deg,#1E88E5 180deg 270deg,#E53935 270deg 360deg);box-shadow:inset 0 0 0 2px #fff;display:grid;place-items:center;z-index:1}
+#centre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:conic-gradient(from 315deg,#00B25E 0deg 90deg,#F2A600 90deg 180deg,#0B5BE6 180deg 270deg,#E8112D 270deg 360deg);box-shadow:inset 0 0 0 2px #fff;display:grid;place-items:center;z-index:1}
 #centre span{color:#fff;font-size:clamp(12px,3vw,22px);text-shadow:0 1px 3px rgba(0,0,0,.4)}
 #pawnLayer{position:absolute;inset:0;z-index:3;pointer-events:none}
 .pawn{position:absolute;width:7.4%;aspect-ratio:1/1;transform:translate(-50%,-52%);transition:left .12s ease-in-out,top .12s ease-in-out,opacity .3s ease;pointer-events:auto;cursor:pointer;z-index:3}
@@ -105,11 +105,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .pawn.movable{cursor:pointer;z-index:4}
 .pawn.movable::before{content:"";position:absolute;inset:-22%;border:3px solid #fff;border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 14px rgba(255,255,255,.9)}
 @keyframes pulseRing{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}
-.pawn.shake{animation:shakeA .32s ease}
-@keyframes shakeA{0%,100%{margin-left:0}20%{margin-left:-7px}40%{margin-left:7px}60%{margin-left:-5px}80%{margin-left:5px}}
-.pawn.fly{opacity:.15}
-.pawn.fly svg{transform:scale(.35)}
-.pawn.fly svg{transition:transform .4s ease-in,opacity .4s ease-in}
+.pawn.cap-bounce{animation:capBounce .3s cubic-bezier(.34,1.56,.64,1)}
+@keyframes capBounce{0%{transform:translate(-50%,-52%) translateY(0)}40%{transform:translate(-50%,-52%) translateY(-4px)}100%{transform:translate(-50%,-52%) translateY(0)}}
+.pawn.cap-flash svg{animation:capFlash .3s ease}
+@keyframes capFlash{0%,100%{filter:brightness(1) drop-shadow(0 3px 3px rgba(0,0,0,.35))}50%{filter:brightness(1.9) drop-shadow(0 3px 3px rgba(0,0,0,.35))}}
+.pawn.cap-shrink svg{transform:translateY(-12px) scale(0);opacity:0;transition:transform .45s cubic-bezier(.55,.06,.68,.19),opacity .45s ease}
+.pawn.cap-jump{transition:none!important}
+.pawn.cap-grow svg{animation:capGrow .4s cubic-bezier(.34,1.56,.64,1)}
+@keyframes capGrow{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.cap-glow{position:absolute;width:11%;aspect-ratio:1/1;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;animation:capGlowFade .3s ease forwards}
+.cap-glow.slow{animation-duration:.5s}
+@keyframes capGlowFade{0%{opacity:0}35%{opacity:.9}100%{opacity:0}}
+.cap-particle{position:absolute;width:7px;height:7px;border-radius:50%;pointer-events:none;z-index:4;animation:capParticle .45s ease-out forwards}
+@keyframes capParticle{0%{transform:translate(-50%,-50%) translate(0,0) scale(1);opacity:1}100%{transform:translate(-50%,-50%) translate(var(--dx,0px),var(--dy,-14px)) scale(.3);opacity:0}}
 #controlBar{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;flex-wrap:wrap}
 #turnPill{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 18px;font-weight:800;font-size:16px;backdrop-filter:blur(8px)}
 #turnPill .dot{width:14px;height:14px;border-radius:50%;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.5)}
@@ -158,7 +166,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .hcell.hyard{border-color:transparent}
 .hcell.hcentre{background:transparent;border-color:transparent}
 .hstar{position:absolute;inset:0;display:grid;place-items:center;color:#8A8570;font-size:9px}
-#heroCentre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:conic-gradient(from 315deg,#43A047 0deg 90deg,#FDD835 90deg 180deg,#1E88E5 180deg 270deg,#E53935 270deg 360deg);box-shadow:inset 0 0 0 2px #fff;z-index:1}
+#heroCentre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:conic-gradient(from 315deg,#00B25E 0deg 90deg,#F2A600 90deg 180deg,#0B5BE6 180deg 270deg,#E8112D 270deg 360deg);box-shadow:inset 0 0 0 2px #fff;z-index:1}
 #heroPawns{position:absolute;inset:0;z-index:2;pointer-events:none}
 .heroPawn{position:absolute;width:9%;aspect-ratio:1/1;transform:translate(-50%,-52%)}
 .heroPawn svg{width:100%;height:100%;display:block;filter:drop-shadow(0 3px 3px rgba(0,0,0,.35))}
@@ -371,10 +379,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 (function(){
 "use strict";
 var COLORS=[
- {name:"Red",hex:"#E53935",dark:"#8E1616",light:"#FFCDD2"},
- {name:"Green",hex:"#43A047",dark:"#1B5E20",light:"#C8E6C9"},
- {name:"Yellow",hex:"#FDD835",dark:"#8C6D00",light:"#FFF9C4"},
- {name:"Blue",hex:"#1E88E5",dark:"#0D47A1",light:"#BBDEFB"}
+ {name:"Crimson",hex:"#E8112D",dark:"#8F0A1C",light:"#FFD3DB"},
+ {name:"Emerald",hex:"#00B25E",dark:"#006B38",light:"#C2F0D8"},
+ {name:"Gold",hex:"#F2A600",dark:"#9A6800",light:"#FFE9B3"},
+ {name:"Sapphire",hex:"#0B5BE6",dark:"#0A3D99",light:"#C7DCFF"}
 ];
 var TRACK=[
  [6,1],[6,2],[6,3],[6,4],[6,5],[5,6],[4,6],[3,6],[2,6],[1,6],[0,6],[0,7],[0,8],
@@ -545,7 +553,7 @@ function tokenRC(colorIdx,steps,slot){
  return [7.5,7.5];
 }
 function pawnSVG(c){
- return '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="pg'+c.name+'" cx="35%" cy="28%" r="80%"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="30%" stop-color="'+c.hex+'"/><stop offset="100%" stop-color="'+c.dark+'"/></radialGradient></defs><ellipse cx="24" cy="43" rx="13" ry="3.6" fill="rgba(0,0,0,0.28)"/><path d="M24 17 C17 19 14 27 13.4 35 L11 41 Q24 45.5 37 41 L34.6 35 C34 27 31 19 24 17 Z" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><circle cx="24" cy="11" r="8" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><ellipse cx="20" cy="8" rx="3.4" ry="2.3" fill="rgba(255,255,255,0.9)" transform="rotate(-28 20 8)"/></svg>';
+ return '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="pg'+c.name+'" cx="35%" cy="28%" r="80%"><stop offset="0%" stop-color="'+c.light+'"/><stop offset="30%" stop-color="'+c.hex+'"/><stop offset="68%" stop-color="'+c.hex+'"/><stop offset="100%" stop-color="'+c.dark+'"/></radialGradient></defs><ellipse cx="24" cy="43" rx="13" ry="3.6" fill="rgba(0,0,0,0.28)"/><path d="M24 17 C17 19 14 27 13.4 35 L11 41 Q24 45.5 37 41 L34.6 35 C34 27 31 19 24 17 Z" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><circle cx="24" cy="11" r="8" fill="url(#pg'+c.name+')" stroke="'+c.dark+'" stroke-width="1.6"/><ellipse cx="20" cy="8" rx="3.8" ry="2.6" fill="rgba(255,255,255,0.95)" transform="rotate(-28 20 8)"/><ellipse cx="19" cy="29" rx="2.4" ry="6" fill="rgba(255,255,255,0.45)" transform="rotate(-14 19 29)"/></svg>';
 }
 function diceFaceSVG(v){
  var map={1:[[50,50]],2:[[32,32],[68,68]],3:[[30,30],[50,50],[70,70]],4:[[32,32],[68,32],[32,68],[68,68]],5:[[30,30],[70,30],[50,50],[30,70],[70,70]],6:[[32,28],[68,28],[32,50],[68,50],[32,72],[68,72]]};
@@ -929,6 +937,37 @@ async function glidePawn(p,t,fromSt,finalSt){
   await sleep(120);
  }
 }
+function capGlowAt(pt,hex,slow){
+ var layer=$("pawnLayer");
+ if(!layer){return null;}
+ var g=document.createElement("div");
+ g.className="cap-glow"+(slow?" slow":"");
+ g.style.left=pt.x+"%";
+ g.style.top=pt.y+"%";
+ g.style.background="radial-gradient(circle,"+hex+" 0%,"+hex+"33 55%,transparent 72%)";
+ layer.appendChild(g);
+ return g;
+}
+function capParticles(pt,hex){
+ var layer=$("pawnLayer");
+ var out=[];
+ if(!layer){return out;}
+ var angles=[0,51,103,154,206,257,309];
+ for(var i=0;i<angles.length;i++){
+  var a=angles[i]*Math.PI/180, r=16;
+  var d=document.createElement("div");
+  d.className="cap-particle";
+  d.style.left=pt.x+"%";
+  d.style.top=pt.y+"%";
+  d.style.background=hex;
+  d.style.boxShadow="0 0 8px "+hex;
+  d.style.setProperty("--dx",Math.round(Math.cos(a)*r)+"px");
+  d.style.setProperty("--dy",Math.round(Math.sin(a)*r)+"px");
+  layer.appendChild(d);
+  out.push(d);
+ }
+ return out;
+}
 async function applyMove(p,t){
  var dice=state.dice;
  var fromSt=state.players[p].steps[t];
@@ -953,18 +992,38 @@ async function applyMove(p,t){
  await glidePawn(p,t,fromSt,finalSt);
  if(victim){
   var vg=$("pawn-"+victim.p+"-"+victim.t);
+  var ag=$("pawn-"+p+"-"+t);
+  var vcol=playerSet(state.n)[victim.p];
+  var acol=playerSet(state.n)[p];
+  var apt=cellPct(tokenRC(col,finalSt,t));
+  var homePt=cellPct(YARD_SLOTS[vcol][victim.t]);
+  // Phase 1 — impact (0-0.3s): attacker bounce, glow beneath it, victim flash.
+  var glow1=capGlowAt(apt,COLORS[acol].hex,false);
+  if(ag){ag.classList.add("cap-bounce");}
+  if(vg){vg.classList.add("cap-flash");}
+  await sleep(300);
+  if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
+  if(ag){ag.classList.remove("cap-bounce");}
+  if(vg){vg.classList.remove("cap-flash");}
+  // Phase 2 — capture (0.3-0.8s): victim shrinks upward and dissolves into particles.
+  var parts=capParticles(apt,COLORS[vcol].hex);
+  if(vg){vg.classList.add("cap-shrink");}
+  await sleep(450);
+  parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
+  // Phase 3 — return home (0.8-1.3s): instant jump to the yard slot, scale up, soft glow.
   if(vg){
-   vg.classList.add("shake");
-   await sleep(340);
-   vg.classList.remove("shake");
-   vg.classList.add("fly");
-   var vcol=playerSet(state.n)[victim.p];
-   var bp=cellPct(YARD_SLOTS[vcol][victim.t]);
-   vg.style.left=bp.x+"%";
-   vg.style.top=bp.y+"%";
-   await sleep(420);
-   vg.classList.remove("fly");
+   vg.classList.remove("cap-shrink");
+   vg.classList.add("cap-jump");
+   vg.style.left=homePt.x+"%";
+   vg.style.top=homePt.y+"%";
+   void vg.offsetWidth;
+   vg.classList.remove("cap-jump");
+   vg.classList.add("cap-grow");
   }
+  var glow2=capGlowAt(homePt,COLORS[vcol].hex,true);
+  await sleep(500);
+  if(glow2&&glow2.parentNode){glow2.parentNode.removeChild(glow2);}
+  if(vg){vg.classList.remove("cap-grow");}
  }
  renderAll();
  if(won){
@@ -1382,7 +1441,11 @@ function tryCreate(attempt,fixedCode,onFail){
    tryCreate(1);
    return;
   }
-  if(fixedCode){
+  // fixedCode + still reconnecting = a restore attempt failing: retry via onFail.
+  // Once the restored peer has OPENED (reconnectDone ran), a later drop is a
+  // live-room drop and must take the normal host reconnect path below —
+  // otherwise a restored room dies silently on its first disconnect.
+  if(fixedCode&&reconnecting){
    clearRoomTimers();
    var p2=peer;peer=null;
    if(p2){try{p2.destroy();}catch(e){}}
@@ -1400,7 +1463,9 @@ function tryCreate(attempt,fixedCode,onFail){
   updateStart();
  });
  peer.on("disconnected",function(){
-  if(fixedCode){
+  // Same as the error handler above: only a still-pending restore attempt
+  // goes to onFail; an established restored room reconnects normally.
+  if(fixedCode&&reconnecting){
    clearRoomTimers();
    var p3=peer;peer=null;
    if(p3){try{p3.destroy();}catch(e){}}
@@ -1524,6 +1589,7 @@ function tryJoin(code,opts){
  function failJoin(msg){
   if(failed){return;}
   failed=true;
+  roomRole=null;
   destroyPeer();
   clearRoomSession();
   resetJoinBtn();
