@@ -406,6 +406,8 @@ var $=function(id){return document.getElementById(id);};
 var state=null, mySeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
 var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
 var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
+var hbTimer=null, guestHbTimer=null, lastHostMsg=0;
+var HB_INTERVAL=5000, HB_DEAD=15000;
 var ROOM_KEY="ludoRoom";
 var seatCid={};
 function getClientId(){
@@ -1254,8 +1256,51 @@ function clearRoomTimers(){
 }
 function destroyPeer(){
  clearRoomTimers();
+ stopHeartbeat();
  if(peer){try{peer.destroy();}catch(e){}}
  peer=null;conns=[];hostConn=null;isHost=false;mySeat=-1;
+}
+function stopHeartbeat(){
+ if(hbTimer){clearInterval(hbTimer);hbTimer=null;}
+ if(guestHbTimer){clearInterval(guestHbTimer);guestHbTimer=null;}
+}
+function pruneDeadConns(){
+ // A guest whose phone drops silently never fires "close" on the host, so
+ // its conn sits in `conns` with open===true and its seat stays taken
+ // forever — the next friend then gets "room-full" although seats look
+ // free. A conn is dead when it closed OR when nothing was heard from it
+ // for HB_DEAD ms. Only the transport entry is dropped; seatCid keeps the
+ // seat so the same device can still reclaim it when it comes back.
+ var now=Date.now(), changed=false;
+ for(var i=conns.length-1;i>=0;i--){
+  var c=conns[i];
+  if(!c.conn||c.conn.open===false||now-(c.lastSeen||0)>HB_DEAD){conns.splice(i,1);changed=true;}
+ }
+ return changed;
+}
+function startHeartbeat(){
+ stopHeartbeat();
+ hbTimer=setInterval(function(){
+  if(!isHost||!peer||peer.destroyed){stopHeartbeat();return;}
+  var now=Date.now();
+  conns.forEach(function(c){try{c.conn.send({type:"ping",t:now});}catch(e){}});
+  if(pruneDeadConns()){
+   renderLobby();
+   broadcastLobby();
+   updateStart();
+  }
+ },HB_INTERVAL);
+}
+function startGuestWatchdog(){
+ if(guestHbTimer){clearInterval(guestHbTimer);guestHbTimer=null;}
+ lastHostMsg=Date.now();
+ guestHbTimer=setInterval(function(){
+  if(roomRole!=="guest"||reconnecting){return;}
+  if(Date.now()-lastHostMsg>HB_DEAD){
+   peerDown=true;
+   scheduleReconnect();
+  }
+ },HB_INTERVAL);
 }
 function saveRoomSession(){
  if(!roomRole||!roomCode){return;}
@@ -1395,6 +1440,7 @@ function tryCreate(attempt,fixedCode,onFail){
  peer.on("open",function(){
   clearRoomTimers();
   isHost=true;mySeat=0;roomRole="host";
+  startHeartbeat();
   $("roomCode").textContent=roomCode;
   setRoomStatus("Room ready — share code "+roomCode);
   if(btn){btn.textContent="Created";btn.classList.add("sel");}
@@ -1415,8 +1461,9 @@ function tryCreate(attempt,fixedCode,onFail){
     // Drop any stale entry still holding this seat (old dead conn).
     for(var i=conns.length-1;i>=0;i--){if(conns[i].seat===seat){conns.splice(i,1);}}
    }else{
-    // Lowest free seat; prune entries whose conn is explicitly closed.
-    for(var j=conns.length-1;j>=0;j--){if(conns[j].conn&&conns[j].conn.open===false){conns.splice(j,1);}}
+    // Lowest free seat; prune dead conns first (silent drops never fire
+    // "close", so without this a dead guest's seat stays taken).
+    pruneDeadConns();
     for(var s2=1;s2<menuN;s2++){
      var taken=false;
      for(var k=0;k<conns.length;k++){if(conns[k].seat===s2){taken=true;break;}}
@@ -1425,7 +1472,7 @@ function tryCreate(attempt,fixedCode,onFail){
    }
    if(seat<0){try{conn.send({type:"room-full"});}catch(e){}return;}
    if(cid){seatCid[seat]=cid;}
-   conns.push({conn:conn,seat:seat});
+   conns.push({conn:conn,seat:seat,lastSeen:Date.now()});
    conn.send({type:"welcome",seat:seat,n:menuN});
    broadcastLobby();
    conn.on("data",function(msg){onGuestMsg(msg,seat);});
@@ -1480,13 +1527,18 @@ function tryCreate(attempt,fixedCode,onFail){
  });
 }
 function onGuestMsg(msg,seat){
+ // Any message proves this conn is alive — stamp it for the heartbeat sweep.
+ for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){conns[i].lastSeen=Date.now();break;}}
+ if(msg&&msg.type==="pong"){return;}
  if(msg&&msg.type==="hello"){
   pendingNames[seat]=sanitizeName(msg.name||"");renderLobby();broadcastLobby();
   var hcid=msg.cid||"";
   if(hcid&&!seatCid[seat]){
    // Metadata was missing at connect time: the guest may have taken a
    // different seat than the one their tokens live at. Move them back.
-   seatCid[seat]=hcid;
+   // Search FIRST: assigning seatCid[seat] before the search would make
+   // the loop find this seat itself and never move a guest whose live
+   // seat is a higher number than the stale one.
    var claimed=-1;
    for(var s2=1;s2<menuN;s2++){if(seatCid[s2]===hcid){claimed=s2;break;}}
    if(claimed>=0&&claimed!==seat){
@@ -1504,6 +1556,7 @@ function onGuestMsg(msg,seat){
      seat=claimed;
     }
    }
+   if(!seatCid[seat]){seatCid[seat]=hcid;}
   }
   if(state){
    var c=null;
@@ -1627,6 +1680,8 @@ function tryJoin(code,opts){
    failJoin("Could not find that room — the host may have left. Check the code and try again.");
   },15000);
   hostConn.on("data",function(msg){
+   lastHostMsg=Date.now();
+   if(msg.type==="ping"){try{hostConn.send({type:"pong"});}catch(e){}return;}
    if(msg.type==="welcome"){
     if(welcomeTimer){clearTimeout(welcomeTimer);welcomeTimer=null;}
     mySeat=msg.seat;menuN=msg.n;updateStart();renderLobby();
@@ -1651,6 +1706,7 @@ function tryJoin(code,opts){
    if(failed){return;}
    joined=true;
    clearRoomTimers();
+   startGuestWatchdog();
    roomRole="guest";
    if(btn){btn.disabled=false;btn.textContent="Join";}
    $("joinBtn").classList.add("sel");
