@@ -71,9 +71,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .mini{height:54px;padding:0 20px;border-radius:16px;border:2px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);font-size:15px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit}
 .mini.sel{background:linear-gradient(135deg,#7B2FF7,#A855F7);border-color:#C084FC}
 #game{width:100%}
-#topRow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:2px 0 10px;align-items:center}
-#gameBackBtn{width:44px;height:44px;border-radius:13px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);color:#F5C542;font-size:22px;font-weight:900;cursor:pointer;display:grid;place-items:center;padding:0;line-height:1;box-shadow:0 4px 10px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
-.matchPill{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:10px 18px;font-weight:800;font-size:15px;backdrop-filter:blur(8px)}
+#topRow{display:flex;gap:10px;justify-content:space-between;margin:2px 0 10px;align-items:center}
+#gameBackBtn,#setBtn{width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);color:#F5C542;font-size:22px;font-weight:900;cursor:pointer;display:grid;place-items:center;padding:0;line-height:1;box-shadow:0 4px 10px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+#setBtn svg{width:22px;height:22px;display:block}
+.matchPill{flex:1;justify-content:center;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:10px 18px;font-weight:800;font-size:15px;backdrop-filter:blur(8px)}
 .matchPill .ico{color:#C084FC}
 #table{display:flex;flex-direction:column;align-items:center;gap:14px}
 #cardsLeft,#cardsRight{display:none}
@@ -109,7 +110,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #centre{position:absolute;left:40%;top:40%;width:20%;height:20%;background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.30) 0%,rgba(255,255,255,0) 55%),conic-gradient(from 315deg,#008F50 0deg 90deg,#F5B51B 90deg 180deg,#075BDE 180deg 270deg,#DC143C 270deg 360deg);box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),inset 0 4px 8px rgba(0,0,0,.28),0 5px 12px rgba(0,0,0,.35);display:grid;place-items:center;z-index:1}
 #centre span{color:#FFD54F;font-size:clamp(12px,3vw,24px);text-shadow:0 1px 2px rgba(0,0,0,.55),0 0 10px rgba(255,213,79,.8)}
 #pawnLayer{position:absolute;inset:0;z-index:3;pointer-events:none}
-.pawn{position:absolute;width:8%;aspect-ratio:1/1;transform:translate(-50%,-52%) rotate(var(--spin,0deg));transition:left .12s ease-in-out,top .12s ease-in-out,opacity .3s ease;pointer-events:auto;cursor:pointer;z-index:3}
+.pawn{position:absolute;width:8%;aspect-ratio:1/1;transform:translate(-50%,-52%) rotate(var(--spin,0deg));transition:left .12s ease-in-out,top .12s ease-in-out,width .12s ease-in-out,opacity .3s ease;pointer-events:auto;cursor:pointer;z-index:3}
+#setPanel{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(10,4,24,.6);padding:16px}
+#setCard{width:min(330px,92vw);background:linear-gradient(160deg,rgba(46,24,84,.97),rgba(24,10,46,.97));border:1px solid rgba(255,255,255,.18);border-radius:18px;padding:16px 18px;box-shadow:0 24px 60px rgba(0,0,0,.6);color:#fff}
+#setHead{display:flex;align-items:center;justify-content:space-between;font-size:17px;font-weight:900;margin-bottom:6px}
+#setClose{width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;font-size:14px;cursor:pointer;font-family:inherit}
+.setRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid rgba(255,255,255,.09)}
+.setLab{font-size:14px;font-weight:700;color:#E7DEF5}
+#qSeg{display:flex;gap:6px}
+#qSeg button{padding:8px 11px;border-radius:11px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#E7DEF5;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+#qSeg button.sel{background:linear-gradient(135deg,#F5C542,#E9BE3C);color:#241505;border-color:#F5C542}
+#setPanel input[type=range]{width:150px;accent-color:#F5C542}
+#muteToggle{padding:8px 16px;border-radius:11px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#E7DEF5;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+#muteToggle.sel{background:linear-gradient(135deg,#F5C542,#E9BE3C);color:#241505;border-color:#F5C542}
+#app.q-low .matchPill{backdrop-filter:none}
+#app.q-low #boardWrap{box-shadow:0 10px 22px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.55)}
+#app.q-low #board{box-shadow:none}
+#app.q-low .cell{box-shadow:none}
+#app.q-low .pawn svg{filter:none}
+#app.q-high .pawn svg{filter:drop-shadow(0 6px 6px rgba(0,0,0,.5))}
 .pawn svg{width:100%;height:100%;display:block;filter:drop-shadow(0 4px 4px rgba(0,0,0,.42))}
 .pawn.movable{cursor:pointer;z-index:4}
 .pawn.movable::before{content:"";position:absolute;inset:-22%;border:3px solid #fff;border-radius:50%;pointer-events:none;animation:pulseRing .8s ease-in-out infinite;box-shadow:0 0 14px rgba(255,255,255,.9)}
@@ -360,6 +379,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     <div id="topRow">
       <button id="gameBackBtn" aria-label="Leave game">&#8592;</button>
       <div class="matchPill"><span class="ico">&#128101;</span><span id="matchLabel">4 Player Match</span></div>
+      <button id="setBtn" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
     <div id="table">
       <div id="cardsLeft"></div>
@@ -390,6 +410,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
       </div>
       <div id="cardsRight"></div>
     </div>
+  </div>
+</div>
+<div id="setPanel" class="hidden">
+  <div id="setCard">
+    <div id="setHead"><span>Settings</span><button id="setClose" aria-label="Close settings">&#10005;</button></div>
+    <div class="setRow"><span class="setLab">Graphics quality</span><div id="qSeg"><button id="qLow">Low</button><button id="qBal">Balanced</button><button id="qHigh">High</button></div></div>
+    <div class="setRow"><span class="setLab">Master volume</span><input id="volMaster" type="range" min="0" max="100" value="100" aria-label="Master volume"></div>
+    <div class="setRow"><span class="setLab">Sound effects</span><input id="volSfx" type="range" min="0" max="100" value="100" aria-label="Sound effects volume"></div>
+    <div class="setRow"><span class="setLab">Mute</span><button id="muteToggle" aria-label="Mute sounds">Off</button></div>
   </div>
 </div>
 <audio id="sndFirst6" src="hello-sulululu_0_7j54.mp3" preload="auto"></audio>
@@ -799,6 +828,23 @@ function buildPawns(){
   }
  }
 }
+// Stacking (V5.29): pawns sharing one logical cell are laid out so their
+// visible bodies never intersect. The pawn's visible body is ~54% of its
+// box, so centres are kept >= 0.55*w apart; pawns shrink as the group
+// grows. Yard pawns have their own slots (singleton groups) and keep
+// full size; finished pawns share the centre and stack the same way.
+function stackLayout(n){
+ if(n<=1){return [{dx:0,dy:0,w:8}];}
+ if(n===2){return [{dx:-1.9,dy:0,w:5.5},{dx:1.9,dy:0,w:5.5}];}
+ if(n===3){return [{dx:0,dy:-2,w:5},{dx:-1.9,dy:1.7,w:5},{dx:1.9,dy:1.7,w:5}];}
+ if(n===4){return [{dx:-1.8,dy:-1.8,w:4.6},{dx:1.8,dy:-1.8,w:4.6},{dx:-1.8,dy:1.8,w:4.6},{dx:1.8,dy:1.8,w:4.6}];}
+ var cols=n<=9?3:4,pitch=2.7,w=3.6,rows=Math.ceil(n/cols),out=[];
+ for(var i=0;i<n;i++){
+  var c=i%cols,r=Math.floor(i/cols);
+  out.push({dx:(c-(cols-1)/2)*pitch,dy:(r-(rows-1)/2)*pitch,w:w});
+ }
+ return out;
+}
 function renderPawns(){
  if(!state){return;}
  var groups={};
@@ -839,11 +885,12 @@ function renderPawns(){
  }
  Object.keys(groups).forEach(function(key){
   var g=groups[key];
-  var off=[[-1.7,-1.7],[1.7,-1.7],[-1.7,1.7],[1.7,1.7],[0,0]];
+  var lay=stackLayout(g.length);
   g.forEach(function(item,idx){
-   var o=g.length>1?off[idx%4]:[0,0];
-   item.el.style.left=(item.x+o[0])+"%";
-   item.el.style.top=(item.y+o[1])+"%";
+   var o=lay[idx]||lay[lay.length-1];
+   item.el.style.left=(item.x+o.dx)+"%";
+   item.el.style.top=(item.y+o.dy)+"%";
+   item.el.style.width=o.w+"%";
    var mov=state.phase==="move"&&state.turn===item.p&&state.movable.some(function(m){return m.p===item.p&&m.t===item.t;});
    item.el.classList.toggle("movable",!!mov);
    var cap=capMap[item.p+"-"+item.t];
@@ -888,7 +935,7 @@ function beep(freq,dur){
   if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();}
   var o=audioCtx.createOscillator(), g=audioCtx.createGain();
   o.type="sine"; o.frequency.value=freq;
-  g.gain.setValueAtTime(0.12,audioCtx.currentTime);
+  g.gain.setValueAtTime(0.12*settings.master*settings.sfx,audioCtx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
   o.connect(g); g.connect(audioCtx.destination);
   o.start(); o.stop(audioCtx.currentTime+dur);
@@ -897,7 +944,58 @@ function beep(freq,dur){
 function playSound(id){
  if(muted){return;}
  var a=$(id);
- if(a){try{var pr=a.play(); if(pr&&pr.catch){pr.catch(function(){});}}catch(e){}}
+ if(a){try{a.volume=settingsVolume();var pr=a.play(); if(pr&&pr.catch){pr.catch(function(){});}}catch(e){}}
+}
+// --- Settings (V5.29): graphics quality, volumes, mute — persisted ---
+// Quality is applied as a class on #app (q-low / q-balanced / q-high) so
+// it is cheap to switch and easy to test. Low disables the expensive
+// effects (trail glow, heavy shadows, pawn drop-shadow); Balanced is the
+// current full look; High adds a stronger trail glow and pawn shadow.
+var settings={quality:"balanced",master:1,sfx:1};
+function storeGet(k){try{return window.localStorage?localStorage.getItem(k):null;}catch(e){return null;}}
+function storeSet(k,v){try{if(window.localStorage){localStorage.setItem(k,v);}}catch(e){}}
+function autoQuality(){
+ var dm=0,hc=0;
+ try{dm=(navigator&&navigator.deviceMemory)||0;hc=(navigator&&navigator.hardwareConcurrency)||0;}catch(e){}
+ // Low-end device (<=3GB RAM or <=4 cores) -> low; never auto high.
+ return ((dm&&dm<=3)||(hc&&hc<=4))?"low":"balanced";
+}
+function loadSettings(){
+ var q=storeGet("ludoQuality");
+ settings.quality=(q==="low"||q==="balanced"||q==="high")?q:autoQuality();
+ var m=parseFloat(storeGet("ludoMaster")), s=parseFloat(storeGet("ludoSfx"));
+ if(!isNaN(m)){settings.master=Math.max(0,Math.min(1,m));}
+ if(!isNaN(s)){settings.sfx=Math.max(0,Math.min(1,s));}
+ muted=(storeGet("ludoMuted")==="1");
+}
+function settingsVolume(){return muted?0:settings.master*settings.sfx;}
+function applySettings(){
+ var app=$("app");
+ if(app&&app.classList){
+  app.classList.remove("q-low");app.classList.remove("q-balanced");app.classList.remove("q-high");
+  app.classList.add("q-"+settings.quality);
+ }
+ var v=settingsVolume();
+ ["sndFirst6","sndKill","sndHome"].forEach(function(id){var a=$(id);if(a){try{a.volume=v;}catch(e){}}});
+ var ql=$("qLow"),qb=$("qBal"),qh=$("qHigh");
+ if(ql){ql.classList.toggle("sel",settings.quality==="low");}
+ if(qb){qb.classList.toggle("sel",settings.quality==="balanced");}
+ if(qh){qh.classList.toggle("sel",settings.quality==="high");}
+ var vm=$("volMaster"),vs=$("volSfx");
+ if(vm){vm.value=Math.round(settings.master*100);}
+ if(vs){vs.value=Math.round(settings.sfx*100);}
+ var mt=$("muteToggle");
+ if(mt){mt.textContent=muted?"On":"Off";mt.classList.toggle("sel",muted);}
+ var mb=$("muteBtn");
+ if(mb){mb.innerHTML=muted?SPK_OFF:SPK_ON;}
+}
+function setQuality(q){
+ if(q!=="low"&&q!=="balanced"&&q!=="high"){return;}
+ settings.quality=q;storeSet("ludoQuality",q);applySettings();
+}
+function setMuted(m){
+ muted=!!m;storeSet("ludoMuted",muted?"1":"0");applySettings();
+ if(!muted){beep(700,0.06);}
 }
 function fmtTime(s){
  var m=Math.floor(s/60), ss=s%60;
@@ -1103,10 +1201,15 @@ function trailCellEl(rc){
  return cellEls[rc[0]*15+rc[1]]||null;
 }
 function trailLight(rc,hex){
+ // Low graphics: skip the glow entirely (the most expensive effect on
+ // budget phones). High graphics: a slightly stronger glow.
+ if(settings.quality==="low"){return;}
  var el=trailCellEl(rc);
  if(!el){return;}
  el.style.transition="box-shadow 0s";
- el.style.boxShadow="inset 0 0 9px 2px "+trailHexA(hex,.5)+",0 0 7px 1px "+trailHexA(hex,.32);
+ el.style.boxShadow=(settings.quality==="high")
+  ?"inset 0 0 12px 3px "+trailHexA(hex,.6)+",0 0 10px 2px "+trailHexA(hex,.4)
+  :"inset 0 0 9px 2px "+trailHexA(hex,.5)+",0 0 7px 1px "+trailHexA(hex,.32);
  trailCells.push(el);
 }
 function trailClear(el){
@@ -1484,7 +1587,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="528";
+var APP_VERSION="529";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -2093,11 +2196,17 @@ $("againBtn").addEventListener("click",resetGame);
 var SPK_ON='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z" fill="#fff" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
 var SPK_OFF='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z" fill="#fff" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>';
 $("muteBtn").innerHTML=SPK_ON;
-$("muteBtn").addEventListener("click",function(){
- muted=!muted;
- $("muteBtn").innerHTML=muted?SPK_OFF:SPK_ON;
- if(!muted){beep(700,0.06);}
-});
+$("muteBtn").addEventListener("click",function(){setMuted(!muted);});
+loadSettings();
+applySettings();
+$("setBtn").addEventListener("click",function(){$("setPanel").classList.remove("hidden");});
+$("setClose").addEventListener("click",function(){$("setPanel").classList.add("hidden");});
+$("qLow").addEventListener("click",function(){setQuality("low");});
+$("qBal").addEventListener("click",function(){setQuality("balanced");});
+$("qHigh").addEventListener("click",function(){setQuality("high");});
+$("volMaster").addEventListener("input",function(){settings.master=Math.max(0,Math.min(1,parseFloat($("volMaster").value)/100||0));storeSet("ludoMaster",String(settings.master));applySettings();});
+$("volSfx").addEventListener("input",function(){settings.sfx=Math.max(0,Math.min(1,parseFloat($("volSfx").value)/100||0));storeSet("ludoSfx",String(settings.sfx));applySettings();});
+$("muteToggle").addEventListener("click",function(){setMuted(!muted);});
 function startWith(n){
  menuN=n;menuMode="together";isHost=false;mySeat=-1;roomRole=null;
  startGame();
@@ -2149,7 +2258,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight};
 })();
 </script>
 </body>
