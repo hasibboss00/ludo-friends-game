@@ -467,11 +467,23 @@ var probeInFlight=false, probeTimer=null;
 var migratedHost=false, knownNames={};
 var takeoverTimer=null, takeoverInFlight=false, takeoverPeer=null, takeoverTries=0;
 var joining=false, joinWatchdog=null;
-// One-retry state for a fresh Join whose host id is temporarily unregistered.
-// 0 = unused, 1 = retry scheduled / in flight, 2 = retry already failed.
+// Retry state for a fresh Join whose host id is temporarily unregistered
+// (the host's own re-register takes 10-30s, so one retry is not enough).
+// 0 = unused, 1 = retry scheduled / in flight, 2 = window over / exhausted.
 // Reset by joinRoom for each fresh join. Lives outside tryJoin because the
-// retry itself calls tryJoin again and must NOT get a second retry.
-var joinRetryTimer=null, joinRetryState=0;
+// retry itself calls tryJoin again and must NOT reset the window.
+// joinRetryDeadline is the end of the ~30s retry window (Date.now()).
+var joinRetryTimer=null, joinRetryState=0, joinRetryDeadline=0;
+// Cancel everything an in-flight fresh Join owns (retry timer, watchdog,
+// window) — called whenever the join is abandoned: Leave, Create, Home,
+// success, final failure. Without this a pending retry would fire later
+// and tryJoin() a room the user already left, or the watchdog would
+// failJoin() a brand-new room the user just created.
+function clearJoinRetry(){
+ if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
+ if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
+ joinRetryState=0; joinRetryDeadline=0;
+}
 var ROOM_KEY="ludoRoom";
 var seatCid={};
 function getClientId(){
@@ -550,6 +562,7 @@ function collectNames(){
  return names;
 }
 function goSetup(n,mode){
+ clearJoinRetry(); // leaving the setup screen abandons any in-flight Join
  menuN=n;menuMode=mode;
  document.querySelectorAll("#countPills .pill").forEach(function(x){x.classList.toggle("sel",parseInt(x.getAttribute("data-n"),10)===n);});
  document.querySelectorAll("#modePills .pill").forEach(function(x){x.classList.toggle("sel",x.getAttribute("data-m")===mode);});
@@ -563,6 +576,9 @@ function goSetup(n,mode){
  window.scrollTo(0,0);
 }
 function showHome(){
+ clearJoinRetry(); // going home abandons any in-flight Join (Leave, back)
+ joining=false; // the abandoned join's button guard must not block a later Join tap
+ resetJoinBtn();
  if(timerInt){clearInterval(timerInt);timerInt=null;}
  stopTurnTimer();turnLeft=30;updateTurnTimerUI();
  state=null;
@@ -1383,7 +1399,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="518";
+var APP_VERSION="519";
 // --- TURN relays (V5.16) ---
 // V5.15 used the widely copied openrelayproject/openrelayproject login at
 // openrelay.metered.ca — that fixed pair is STALE: Metered no longer grants
@@ -1993,6 +2009,9 @@ function createRoom(){
  var btn=$("createBtn");
  destroyPeer();
  cancelStaleRestore();
+ clearJoinRetry(); // abandoning a Join to create instead: no retry may fire later
+ joining=false; // the abandoned join's button guard must not block a later Join tap
+ resetJoinBtn();
  roomRole=null;peerDown=false;hostLeftSeen=false;
  seatCid={};
  $("roomCode").textContent="";
@@ -2282,8 +2301,8 @@ function joinRoom(){
  // further tap. The button stays disabled on "Joining…" until the welcome
  // arrives (or the join fails), so a 2nd tap can never start a second join.
  if(joining){return;}
- joinRetryState=0;
- if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
+ clearJoinRetry();
+ joinRetryDeadline=Date.now()+30000; // ~30s retry window for peer-unavailable
  var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
  if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
  destroyPeer();
@@ -2298,12 +2317,13 @@ function joinRoom(){
  if(btn){btn.disabled=true;btn.textContent="Joining…";}
  setRoomStatus("Joining…");
  // Hard deadline: no join path may strand the button on "Joining…" — if no
- // seat (welcome) arrived in 25s, fail loudly so the user can retry.
+ // seat (welcome) arrived, fail loudly so the user can retry. 60s = the
+ // 30s retry window plus the 30s connection window of the last attempt.
  if(joinWatchdog){clearTimeout(joinWatchdog);}
  joinWatchdog=setTimeout(function(){
   joinWatchdog=null;
   if(mySeat<0){failJoin("Could not join — tap Join again.");}
- },45000); // must stay longer than the 30s connTimer above
+ },60000); // must stay longer than the 30s connTimer above
  ensurePeer(function(ok){
   if(!ok){
    joining=false;
@@ -2341,8 +2361,7 @@ function tryJoin(code,opts){
   if(failed){return;}
   failed=true;
   joining=false;
-  if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
-  if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
+  clearJoinRetry();
   reconnecting=false; reconnectTries=0;
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
   roomRole=null;
@@ -2358,23 +2377,32 @@ function tryJoin(code,opts){
   var p=peer;peer=null;
   if(p){try{p.destroy();}catch(e){}}
  }
- // One free retry when the host's id is temporarily unregistered (its broker
- // socket died mid-reconnect). The connect failure may surface on the Peer
- // AND on the DataConnection — this helper dedupes, so the first error
- // claims the retry, the second only waits for it, and a failure of the
- // retry itself finally fails the join.
+ // Retry while the host's id is temporarily unregistered (its broker
+ // socket died mid-reconnect, and its own re-register takes 10-30s): one
+ // fresh attempt every ~5s for up to ~30s total, then fail exactly as
+ // before ("Can't find the host — check the host's internet and tap Join
+ // again."). The connect failure may surface on the Peer AND on the
+ // DataConnection — this helper dedupes, so the first error claims the
+ // retry, the second only waits for it, and a failure past the window
+ // finally fails the join.
  function tryPeerUnavailable(){
   if(joinRetryState===1){return "pending";}
   if(joinRetryState===2){return "exhausted";}
+  if(!joinRetryDeadline||Date.now()>=joinRetryDeadline){joinRetryState=2;return "exhausted";}
   joinRetryState=1;
   dropRestorePeer();
   setRoomStatus("Can't find the host right now — trying again…");
   joinRetryTimer=setTimeout(function(){
    joinRetryTimer=null;
-   joinRetryState=2;
    if(failed){return;}
+   if(!joinRetryDeadline||Date.now()>=joinRetryDeadline){
+    joinRetryState=2;
+    failJoin("Can't find the host — check the host's internet and tap Join again.");
+    return;
+   }
+   joinRetryState=0;
    tryJoin(code,opts);
-  },4000);
+  },5000);
   return "started";
  }
  peer.on("error",function(err){
@@ -2418,7 +2446,7 @@ function tryJoin(code,opts){
     // the join is done, so cancel it — otherwise it would fire later and
     // pointlessly restore a room that is already joined.
     if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
-    if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
+    clearJoinRetry(); // join done: no retry or watchdog may fire later
     reconnecting=false; reconnectTries=0;
     resetJoinBtn();
     mySeat=msg.seat;myLastSeat=mySeat;menuN=msg.n;updateStart();renderLobby();
@@ -2611,8 +2639,9 @@ document.querySelectorAll(".modeCard").forEach(function(card){
   // Invite link: go straight into the room — no Join tap needed. The
   // saved name is already filled in by renderNameInputs(); the join runs
   // through the same guarded path as a manual tap (double-tap guard,
-  // 25s watchdog, one retry), and if it ultimately fails the setup
-  // screen stays up with Join available for a manual retry.
+  // 60s watchdog, ~30s peer-unavailable retry window), and if it
+  // ultimately fails the setup screen stays up with Join available for
+  // a manual retry.
   goSetup(4,"online");
   $("roomInput").value=code;
   joinRoom();
