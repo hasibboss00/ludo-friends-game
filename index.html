@@ -1327,9 +1327,9 @@ function copyText(txt,done){
 }
 // Cache-buster for the invite link: a friend opening the shared link must
 // get THIS build, not a stale copy their phone cached (an old cached build
-// can sit on "Joining…" forever — the 25s watchdog only exists in V5.9+).
+// can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="516";
+var APP_VERSION="517";
 // --- TURN relays (V5.16) ---
 // V5.15 used the widely copied openrelayproject/openrelayproject login at
 // openrelay.metered.ca — that fixed pair is STALE: Metered no longer grants
@@ -1538,7 +1538,7 @@ function attemptReconnect(){
   return;
  }
  reconnectTries++;
- if(roomRole==="host"){setLobbyStatus("Net gelo — room abar online hocche… ("+reconnectTries+"/"+maxTry+")");}
+ if(roomRole==="host"){setLobbyStatus("Connection lost — bringing the room back online… ("+reconnectTries+"/"+maxTry+")");}
  if(roomRole==="host"){restoreHost();}else{restoreGuest();}
 }
 function reconnectFailed(){
@@ -1562,7 +1562,7 @@ function restoreHost(){
  roomCode=code; roomRole="host"; peerDown=false;
  destroyPeer();
  // No setReconnectingUI() here: attemptReconnect already set the
- // "(chesta X/12)" status, and this would overwrite it with plain text.
+ // "(X/12)" status, and this would overwrite it with plain text.
  ensurePeer(function(ok){
   if(!ok){reconnectFailed();return;}
   tryCreate(0,code,reconnectFailed);
@@ -1845,7 +1845,7 @@ function joinRoom(){
  if(joinWatchdog){clearTimeout(joinWatchdog);}
  joinWatchdog=setTimeout(function(){
   joinWatchdog=null;
-  if(mySeat<0){failJoin("Join holo na — abar Join chap dao.");}
+  if(mySeat<0){failJoin("Could not join — tap Join again.");}
  },45000); // must stay longer than the 30s connTimer above
  ensurePeer(function(ok){
   if(!ok){
@@ -1910,7 +1910,7 @@ function tryJoin(code,opts){
   if(joinRetryState===2){return "exhausted";}
   joinRetryState=1;
   dropRestorePeer();
-  setRoomStatus("Host-ke ekhon khuje pacchi na — abar chesta korchi…");
+  setRoomStatus("Can't find the host right now — trying again…");
   joinRetryTimer=setTimeout(function(){
    joinRetryTimer=null;
    joinRetryState=2;
@@ -1925,7 +1925,7 @@ function tryJoin(code,opts){
   if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
   if(type==="peer-unavailable"){
    if(tryPeerUnavailable()!=="exhausted"){return;}
-   failJoin("Host-ke khuje pacchi na — host-er phone-e net thik ache kina dekhe abar Join chap dao.");
+   failJoin("Can't find the host — check the host's internet and tap Join again.");
   }else{
    failJoin("Could not reach the game server — check your internet and tap Create again.");
   }
@@ -2005,7 +2005,7 @@ function tryJoin(code,opts){
    // Connect failure before open = the host's id is not reachable right now;
    // same one-retry window as the peer-unavailable path, same message.
    if(tryPeerUnavailable()!=="exhausted"){return;}
-   failJoin("Host-ke khuje pacchi na — host-er phone-e net thik ache kina dekhe abar Join chap dao.");
+   failJoin("Can't find the host — check the host's internet and tap Join again.");
   });
   hostConn.on("close",function(){
    if(reconnecting){return;}
