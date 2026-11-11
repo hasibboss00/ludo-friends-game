@@ -1989,8 +1989,20 @@ document.querySelectorAll(".modeCard").forEach(function(card){
 (function(){
  var m=(window.location.search||"").match(/room=([A-Za-z0-9]{6})/);
  if(m){
+  var code=m[1].toUpperCase();
+  // This device already has a session for THIS room: reconnect to it
+  // (keeps the guest's seat, or re-creates the host's room) instead of
+  // starting a fresh join.
+  var saved=readRoomSession();
+  if(saved&&saved.code&&saved.code.toUpperCase()===code){restoreSavedRoom(saved);return;}
+  // Invite link: go straight into the room — no Join tap needed. The
+  // saved name is already filled in by renderNameInputs(); the join runs
+  // through the same guarded path as a manual tap (double-tap guard,
+  // 25s watchdog, one retry), and if it ultimately fails the setup
+  // screen stays up with Join available for a manual retry.
   goSetup(4,"online");
-  $("roomInput").value=m[1].toUpperCase();
+  $("roomInput").value=code;
+  joinRoom();
   return;
  }
  var saved=readRoomSession();
