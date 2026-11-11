@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>LUDO</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -421,16 +420,17 @@ var YARD_SLOTS={0:[[1.5,1.5],[1.5,3.5],[3.5,1.5],[3.5,3.5]],1:[[1.5,10.5],[1.5,1
 var ARROWS={"7,0":["\u2192",0],"0,7":["\u2193",1],"7,14":["\u2190",2],"14,7":["\u2191",3]};
 var FINISH=56, HOME_LEN=5;
 var $=function(id){return document.getElementById(id);};
-var state=null, mySeat=-1, myLastSeat=-1, isHost=false, peer=null, conns=[], roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
+var state=null, mySeat=-1, isHost=false, roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
 // Classic rule set (fixed for every match — never changed silently):
 //  - 6 grants an extra roll; capturing grants an extra roll.
 //  - Reaching home grants NO extra roll.
 //  - 3 sixes in a row forfeits the turn (classic anti-flood rule).
 //  - Exact roll required to enter home (FINISH); overshoot cannot move.
 //  - ★ squares are safe: no capture there. Home columns cannot be captured.
-//  - The HOST is the authoritative server in this P2P game: it alone rolls
-//    the dice and applies moves; guests only send roll/move requests, which
-//    the host validates (turn, phase, legal move) before applying.
+//  - The ROOM SERVER is the authority in an online game: it alone rolls
+//    the dice and applies moves; every player only sends roll/move requests,
+//    which the server validates (turn, phase, legal move) before applying.
+//    In Together mode this tab is the authority.
 var RULES={extraOnSix:true,extraOnCapture:true,extraOnHome:false,sixForfeit:3,exactFinish:true};
 var hudMsg="", hudMsgUntil=0;
 // Genuine unbiased dice. Every roll is independent: each face has exactly
@@ -448,44 +448,17 @@ function rollFairDie(){
  }
  return 1+Math.floor(Math.random()*6); // fallback: still uniform 1/6
 }
-var pendingNames={}, hostName="", myName="", winHandledFor=null, guestLobby=[];
-var roomRole=null, reconnecting=false, reconnectTries=0, reconnectTimer=null, peerDown=false, hostLeftSeen=false;
-var hbTimer=null, guestHbTimer=null, lastHostMsg=0;
-var HB_INTERVAL=5000, HB_DEAD=15000;
-// --- Host liveness + migration (V5.18) ---
-// A phone that sleeps can leave a zombie host peer: the broker dropped the
-// "ludo-XXXXXX" registration, but peer.disconnected stays false and no
-// "disconnected" event ever fires, so guests get peer-unavailable forever
-// while the host's tab still says "Room ready". The host must therefore
-// prove its registration is alive (loopback probe, see probeHostLiveness)
-// and never stop re-registering while the room is open.
-var hostWatchTimer=null, lastReconnectAttempt=0, hostUnavailableCount=0;
-var probeInFlight=false, probeTimer=null;
-// Host migration: when the host drops, the senior guest takes the room
-// over (same room id), so the game survives the host. knownNames is the
-// seat -> name record the new host takes over (from state.names / lobby).
-var migratedHost=false, knownNames={};
-var takeoverTimer=null, takeoverInFlight=false, takeoverPeer=null, takeoverTries=0;
+var hostName="", myName="", winHandledFor=null, srvLobby=[];
+var roomRole=null, reconnecting=false;
 var joining=false, joinWatchdog=null;
-// Retry state for a fresh Join whose host id is temporarily unregistered
-// (the host's own re-register takes 10-30s, so one retry is not enough).
-// 0 = unused, 1 = retry scheduled / in flight, 2 = window over / exhausted.
-// Reset by joinRoom for each fresh join. Lives outside tryJoin because the
-// retry itself calls tryJoin again and must NOT reset the window.
-// joinRetryDeadline is the end of the ~30s retry window (Date.now()).
-var joinRetryTimer=null, joinRetryState=0, joinRetryDeadline=0;
-// Cancel everything an in-flight fresh Join owns (retry timer, watchdog,
-// window) — called whenever the join is abandoned: Leave, Create, Home,
-// success, final failure. Without this a pending retry would fire later
-// and tryJoin() a room the user already left, or the watchdog would
-// failJoin() a brand-new room the user just created.
-function clearJoinRetry(){
- if(joinRetryTimer){clearTimeout(joinRetryTimer);joinRetryTimer=null;}
+// --- Room server transport (V5.20): state that is NOT in the state block ---
+// (see the transport block after APP_VERSION for the connection itself).
+function clearJoinTimers(){
+ if(wsRetryTimer){clearTimeout(wsRetryTimer);wsRetryTimer=null;}
  if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
- joinRetryState=0; joinRetryDeadline=0;
+ if(wsHelloTimer){clearTimeout(wsHelloTimer);wsHelloTimer=null;}
 }
 var ROOM_KEY="ludoRoom";
-var seatCid={};
 function getClientId(){
  try{
   var c=localStorage.getItem("ludoClient");
@@ -499,7 +472,7 @@ function getClientId(){
  }catch(e){return "t"+Math.floor(Math.random()*1e9);}
 }
 var CLIENT_ID=getClientId();
-var menuN=4, menuMode="together", hostConn=null, netAct=false;
+var menuN=4, menuMode="together";
 function playerSet(n){return n===2?[0,2]:(n===3?[0,1,2]:[0,1,2,3]);}
 function sanitizeName(v){return (v||"").replace(/^\s+|\s+$/g,"").slice(0,12);}
 function displayName(seat){
@@ -562,7 +535,7 @@ function collectNames(){
  return names;
 }
 function goSetup(n,mode){
- clearJoinRetry(); // leaving the setup screen abandons any in-flight Join
+ clearJoinTimers(); // leaving the setup screen abandons any in-flight Join
  menuN=n;menuMode=mode;
  document.querySelectorAll("#countPills .pill").forEach(function(x){x.classList.toggle("sel",parseInt(x.getAttribute("data-n"),10)===n);});
  document.querySelectorAll("#modePills .pill").forEach(function(x){x.classList.toggle("sel",x.getAttribute("data-m")===mode);});
@@ -576,7 +549,7 @@ function goSetup(n,mode){
  window.scrollTo(0,0);
 }
 function showHome(){
- clearJoinRetry(); // going home abandons any in-flight Join (Leave, back)
+ clearJoinTimers(); // going home abandons any in-flight Join (Leave, back)
  joining=false; // the abandoned join's button guard must not block a later Join tap
  resetJoinBtn();
  if(timerInt){clearInterval(timerInt);timerInt=null;}
@@ -841,7 +814,7 @@ function renderHud(){
  }
  $("matchLabel").textContent=state.n+" Player Match";
  var mine=(state.mode==="together")||(mySeat===state.turn);
- var canRoll=state.phase==="roll"&&mine;
+ var canRoll=state.phase==="roll"&&mine&&!(state.mode==="online"&&rollPending);
  $("diceBox").disabled=!canRoll;
  $("rollBtn").disabled=!canRoll;
  // Public dice log: the last rolls, same on every player's screen.
@@ -907,7 +880,9 @@ function turnTick(){
  turnLeft--;
  updateTurnTimerUI();
  if(turnLeft<=0){
-  if(state.mode==="online"&&!isHost){stopTurnTimer();return;}
+  // Online: the timer is DISPLAY-ONLY — the server forfeits the turn
+  // (and broadcasts the new turn). This client never advances it.
+  if(state.mode==="online"){stopTurnTimer();return;}
   nextTurn();
  }
 }
@@ -923,29 +898,21 @@ function newGame(n,mode,names){
  resetTurnTimer();
 }
 function startGame(){
- var names=[];
- if(menuMode==="together"){
-  names=collectNames();
-  saveLastNames(names);
- }else if(isHost){
-  if(migratedHost){
-   // Names come from the room the new host took over, not its own input:
-   // seat 0 is the original host, the rest are the guests it already knew.
-   names=[];
-   for(var i=0;i<menuN;i++){names.push(knownNames[i]||pendingNames[i]||"");}
-  }else{
-   var hn=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"")||sanitizeName(hostName);
-   names=[];
-   for(var i=0;i<menuN;i++){names.push(i===0?hn:(pendingNames[i]||""));}
-  }
+ if(menuMode==="online"){
+  // The server starts the game: it builds the fresh state and broadcasts
+  // it, and applyNetState opens the board for everyone.
+  if(!amLogicalHost()){return;}
+  sendSrv({type:"start"});
+  return;
  }
+ var names=collectNames();
+ saveLastNames(names);
  newGame(menuN,menuMode,names);
  $("menu").classList.add("hidden");
  $("lobby").classList.add("hidden");
  $("homeView").classList.add("hidden");
  $("game").classList.remove("hidden");
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
- broadcast();
 }
 function computeMovable(){
  var mov=[];
@@ -958,6 +925,7 @@ function computeMovable(){
  return mov;
 }
 function nextTurn(){
+ if(state&&state.mode==="online"){return;} // the server owns the turn in online games
  do{state.turn=(state.turn+1)%state.n;}while(state.left[state.turn]);
  state.sixStreak=0;
  state.phase="roll";
@@ -969,8 +937,14 @@ function nextTurn(){
 }
 async function rollDice(){
  if(!state||state.phase!=="roll"){return;}
- if(state.mode==="online"&&!isHost&&!netAct){sendToHost({type:"roll"});return;}
- if(state.mode==="online"&&mySeat!==state.turn&&!netAct){return;}
+ if(state.mode==="online"){
+  // The SERVER rolls: send the request and wait for its state broadcast
+  // (the dice tumble comes from the broadcast, like a guest's).
+  if(mySeat!==state.turn||rolling||rollPending){return;}
+  rollPending=true;
+  sendSrv({type:"roll"});
+  return;
+ }
  if(rolling){return;}
  rolling=true;
  var btn=$("diceBox");
@@ -1035,10 +1009,15 @@ function findVictim(absIdx,ownerSeat){
 async function onTokenTap(p,t){
  if(!state||state.phase!=="move"){return;}
  if(p!==state.turn){return;}
- if(state.mode==="online"&&mySeat!==p){return;}
+ if(state.mode==="online"){
+  if(mySeat!==p){return;}
+  var okS=state.movable.some(function(m){return m.p===p&&m.t===t;});
+  if(!okS){return;}
+  sendSrv({type:"move",p:p,t:t});
+  return;
+ }
  var ok=state.movable.some(function(m){return m.p===p&&m.t===t;});
  if(!ok){return;}
- if(state.mode==="online"&&!isHost){sendToHost({type:"move",p:p,t:t});return;}
  await applyMove(p,t);
 }
 async function glidePawn(p,t,fromSt,finalSt){
@@ -1174,25 +1153,21 @@ function confetti(){
  setTimeout(function(){box.innerHTML="";},2400);
 }
 function resetGame(){
+ if(state&&state.mode==="online"){
+  // Only the logical host restarts: the server re-deals a fresh game
+  // and broadcasts it to everyone. A guest waits for that broadcast.
+  if(!amLogicalHost()){hudMsg="Waiting for the host to start a new game.";hudMsgUntil=Date.now()+2500;renderAll();return;}
+  sendSrv({type:"restart"});
+  return;
+ }
  var n=state?state.n:4, mode=state?state.mode:"together", nm=state?state.names.slice():[];
  state=null;
  newGame(n,mode,nm);
  $("winOverlay").classList.add("hidden");
- if(mode==="online"&&isHost){broadcast();}
 }
 function joinedCount(){
- if(!isHost){return mySeat>=0?1:0;}
- // Distinct seats in the room: my own seat + every live guest conn. A
- // migrated host also counts the original host's seat (knownNames[0]) —
- // that player is still in the room, just reconnecting, so START must not
- // stay disabled forever waiting for them. (For a normal host this is
- // exactly conns.length+1: mySeat is 0 and conns hold seats 1..n-1.)
- var seats={};
- seats[mySeat]=1;
- for(var i=0;i<conns.length;i++){seats[conns[i].seat]=1;}
- if(migratedHost&&knownNames[0]){seats[0]=1;}
- var n=0; for(var s in seats){n++;}
- return n;
+ // Online: the server's lobby is the count (filled seats, host included).
+ return srvLobby.length;
 }
 function updateStart(){
  var btn=$("startBtn");
@@ -1209,9 +1184,8 @@ function serialState(){
  return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,sixStreak:state.sixStreak||0,diceLog:(state.diceLog||[]).slice(),left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
 }
 function broadcast(){
- if(!state||state.mode!=="online"||!isHost){return;}
- var msg={type:"state",state:serialState()};
- conns.forEach(function(c){try{c.conn.send(msg);}catch(e){}});
+ // No-op in V5.20: the room server broadcasts every state change to all
+ // players. (Together mode renders locally and never needs this.)
 }
 var lastRollId=-1, diceTumbling=false, diceTumbleTarget=0;
 async function guestDiceTumble(target){
@@ -1230,6 +1204,7 @@ async function guestDiceTumble(target){
 function applyNetState(s){
  var had=!!state;
  var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
+ rollPending=false;
  state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,sixStreak:s.sixStreak||0,diceLog:(s.diceLog||[]).slice(),left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
  if(!had){
   $("menu").classList.add("hidden");
@@ -1239,8 +1214,13 @@ function applyNetState(s){
   buildPawns();
   $("diceBox").innerHTML=diceFaceSVG(6);
   lastRollId=-1;
+  $("winOverlay").classList.add("hidden");
+  if(s.rollId===0){startTimer();} // a fresh game: the match clock runs for everyone
  }else if(s.gameId!==oldGame){
   lastRollId=-1;
+  // A new game started (host pressed Play Again): hide the old win card.
+  if(s.phase!=="over"){$("winOverlay").classList.add("hidden");}
+  if(s.rollId===0){startTimer();}
  }
  if(s.rollId&&s.rollId!==lastRollId&&s.dice>=1&&s.dice<=6){
   lastRollId=s.rollId;
@@ -1258,24 +1238,7 @@ function applyNetState(s){
 
 var USER_PLUS_SVG='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9B8BD0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
 function setLobbyStatus(t){var el=$("lobbyStatus");if(el){el.textContent=t||"";}}
-function lobbyPlayers(){
- // Seat -> name, lowest seat first. On a migrated host, seat 0 is the
- // original host: their name is known even though they have no live conn
- // (a guest who just re-seated there overwrites it with their own name).
- var bySeat={};
- if(migratedHost){
-  if(knownNames[0]){bySeat[0]=knownNames[0];}
- }else{
-  bySeat[0]=hostName||sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
- }
- conns.forEach(function(c){bySeat[c.seat]=pendingNames[c.seat]||"";});
- // The host's own seat: for a normal host that is seat 0 (above); a
- // migrated host sits in a guest seat and must show itself as filled.
- if(isHost&&mySeat>0){bySeat[mySeat]=myName||pendingNames[mySeat]||"";}
- var out=[];
- for(var s=0;s<menuN;s++){if(Object.prototype.hasOwnProperty.call(bySeat,s)){out.push({seat:s,name:bySeat[s]});}}
- return out;
-}
+
 function showLobby(asHost){
  if(typeof asHost==="undefined"){asHost=(roomRole==="host");}
  $("menu").classList.add("hidden");
@@ -1293,7 +1256,7 @@ function showLobby(asHost){
  window.scrollTo(0,0);
 }
 function currentMyName(){
- if(roomRole==="host"){return migratedHost?myName:(hostName||sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||""));}
+ if(roomRole==="host"){return hostName||sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");}
  return myName||"";
 }
 function saveLobbyName(){
@@ -1301,36 +1264,29 @@ function saveLobbyName(){
  var nm=sanitizeName(inp?inp.value:"");
  if(!nm){if(inp){inp.value=currentMyName();}return;} // empty: keep the old name
  try{localStorage.setItem("ludoLastName",nm);}catch(e){}
- if(isHost){
-  if(migratedHost){
-   // The new host renames ITSELF, not the original host whose seat it shows.
-   myName=nm; pendingNames[mySeat]=nm; knownNames[mySeat]=nm;
-   var oi2=$("onlineNameInput"); if(oi2){oi2.value=nm;}
-   renderLobby(); broadcastLobby(); saveRoomSession();
-  }else{
-   hostName=nm;
-   var oi=$("onlineNameInput"); if(oi){oi.value=nm;}
-   renderLobby(); broadcastLobby(); saveRoomSession();
-  }
+ if(roomRole==="host"){
+  hostName=nm;
+  var oi=$("onlineNameInput"); if(oi){oi.value=nm;}
  }else{
   myName=nm;
-  // Re-send hello: the host stores the new name and re-broadcasts the
-  // lobby to everyone, so all players see it.
-  sendToHost({type:"hello",name:nm,cid:CLIENT_ID});
-  // Optimistic local update so the player sees it at once.
-  for(var i=0;i<guestLobby.length;i++){if(guestLobby[i].seat===mySeat){guestLobby[i].name=nm;break;}}
-  renderLobby(); saveRoomSession();
  }
+ saveRoomSession();
+ if(!roomRole){renderLobby();return;}
+ // The server has no rename message — re-join with the new name. The
+ // seat is reclaimed by cid, so this is only a brief reconnect (the
+ // lobby shows the player as Away for a moment, then the new name).
+ setLobbyStatus("Saving name…");
+ closeWsExpect();
+ restoring=true;
+ connectSrv({kind:"restore",code:roomCode,name:nm});
+ renderLobby();
 }
 function renderLobby(){
  var grid=$("lobbyGrid"); if(!grid){return;}
  var lbl=$("lobbyPlayersLbl"); if(lbl){lbl.textContent="\uD83D\uDC65 "+menuN+" Players \u2013 Classic Ludo";}
- var filled={};
- if(roomRole==="host"){
-  lobbyPlayers().forEach(function(p){filled[p.seat]=p.name;});
- }else{
-  guestLobby.forEach(function(p){filled[p.seat]=p.name;});
- }
+ isHost=amLogicalHost();
+ var filled={}, away={};
+ srvLobby.forEach(function(p){filled[p.seat]=p.name; away[p.seat]=!p.connected;});
  grid.innerHTML="";
  for(var seat=0;seat<menuN;seat++){
   var ci=playerSet(menuN)[seat];
@@ -1348,8 +1304,10 @@ function renderLobby(){
    var nEl=document.createElement("div"); nEl.className="lname"; nEl.textContent=nm;
    var row=document.createElement("div"); row.className="lrow";
    var pw=document.createElement("div"); pw.className="lpawn"; pw.innerHTML=pawnSVG(c,c.name+"-lobby-"+seat);
-   var rd=document.createElement("div"); rd.className="readyPill"; rd.textContent="\u2713 Ready";
-   row.appendChild(pw); row.appendChild(rd);
+   var st=document.createElement("div");
+   if(away[seat]){st.className="readyPill"; st.style.background="#64748B"; st.textContent="Away";}
+   else{st.className="readyPill"; st.textContent="\u2713 Ready";}
+   row.appendChild(pw); row.appendChild(st);
    slot.appendChild(av); slot.appendChild(nEl); slot.appendChild(row);
   }else{
    slot.className="lslot empty";
@@ -1361,22 +1319,21 @@ function renderLobby(){
   grid.appendChild(slot);
  }
  var filledCount=Object.keys(filled).length;
+ var connectedCount=0;
+ srvLobby.forEach(function(p){if(p.connected){connectedCount++;}});
  var sb=$("lobbyStartBtn"), wEl=$("lobbyWait");
- if(roomRole==="host"){
+ if(amLogicalHost()){
   sb.classList.remove("hidden");
   var full=filledCount>=menuN;
-  sb.disabled=!full||reconnecting;
-  wEl.textContent=full?"":"Waiting for "+(menuN-filledCount)+" more player"+((menuN-filledCount)===1?"":"s")+"\u2026";
+  var allIn=connectedCount>=menuN;
+  sb.disabled=!full||!allIn||reconnecting||restoring;
+  wEl.textContent=full?(allIn?"":"Waiting for players to reconnect…"):("Waiting for "+(menuN-filledCount)+" more player"+((menuN-filledCount)===1?"":"s")+"\u2026");
  }else{
   sb.classList.add("hidden");
   wEl.textContent="Waiting for the host to start the game\u2026";
  }
 }
-function broadcastLobby(){
- if(!isHost||!peer||state){return;}
- var msg={type:"lobby",players:lobbyPlayers()};
- conns.forEach(function(c){try{c.conn.send(msg);}catch(e){}});
-}
+
 function copyText(txt,done){
  function fallback(){
   try{
@@ -1399,107 +1356,377 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="519";
-// --- TURN relays (V5.16) ---
-// V5.15 used the widely copied openrelayproject/openrelayproject login at
-// openrelay.metered.ca — that fixed pair is STALE: Metered no longer grants
-// allocations with it (it now wants signup + API key). Real phones still
-// failed after V5.15 for exactly this reason. The no-signup method that
-// Metered still documents is staticauth.openrelay.metered.ca with a
-// TIME-LIMITED credential: username "<expiry>:<label>", credential =
-// base64(HMAC-SHA1(shared secret, username)). The secret below is the one
-// Metered publishes on its own docs page (openrelayprojectsecret), so no
-// account is needed — the page computes a fresh 24h credential on load.
-// A second, independent relay is included too (AnyFirewall demo,
-// webrtc/webrtc over TCP 443), so one dead relay no longer kills every
-// join. ICE tries all servers; whichever allocates first wins.
-// Pure-JS SHA-1 + HMAC-SHA1 (synchronous, no library, cross-checked in
-// tests against Node's crypto). Short inputs only (usernames ~20 chars).
-function sha1Bytes(msgBytes){
- var bytes=msgBytes.slice();
- var ml=bytes.length;
- bytes.push(0x80);
- while(bytes.length%64!==56)bytes.push(0);
- var bitLen=ml*8;
- // NOTE: (bitLen>>>(i*8)) is WRONG here — JS shifts wrap mod 32, so >>>32
- // equals >>>0 and the length byte lands twice. Division is correct.
- for(var i=7;i>=0;i--)bytes.push((Math.floor(bitLen/Math.pow(2,i*8)))&0xff);
- function rol(n,b){return ((n<<b)|(n>>>(32-b)))|0;}
- var h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0;
- for(var o=0;o<bytes.length;o+=64){
-  var w=[];
-  for(var t=0;t<16;t++)w[t]=((bytes[o+t*4]<<24)|(bytes[o+t*4+1]<<16)|(bytes[o+t*4+2]<<8)|bytes[o+t*4+3])|0;
-  for(var t2=16;t2<80;t2++)w[t2]=rol(w[t2-3]^w[t2-8]^w[t2-14]^w[t2-16],1);
-  var a=h0,b=h1,c=h2,d=h3,e=h4;
-  for(var t3=0;t3<80;t3++){
-   var f,k;
-   if(t3<20){f=(b&c)|((~b)&d);k=0x5A827999;}
-   else if(t3<40){f=b^c^d;k=0x6ED9EBA1;}
-   else if(t3<60){f=(b&c)|(b&d)|(c&d);k=0x8F1BBCDC;}
-   else{f=b^c^d;k=0xCA62C1D6;}
-   var tmp=(rol(a,5)+f+e+k+w[t3])|0;
-   e=d;d=c;c=rol(b,30);b=a;a=tmp;
+var APP_VERSION="520";
+// --- Room server transport (V5.20) ---
+// Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
+// not in any player's tab. The server is the authority: it holds the room and
+// the lobby, rolls the dice, validates every move and runs the 30s turn timer.
+// This client only renders what the server sends and forwards the player's
+// roll/move taps. Together mode never touches the server.
+var ROOM_SERVER_URL=(typeof window!=="undefined"&&window.LUDO_SERVER_URL)?window.LUDO_SERVER_URL:"wss://ludo-room-server-r92b.onrender.com";
+var ws=null, wsExpectClose=false, wsPending=null, wsAction=null, wsRetryTimer=null, wsRetryCount=0;
+var wsConnectTimer=null, wsHelloTimer=null;
+var leaving=false, kicked=false, restoring=false, rollPending=false;
+var animatingNet=false, pendingNetState=null;
+var serverStatus="";
+function amLogicalHost(){
+ // The server lets seat 0 start while it is connected, otherwise the
+ // lowest connected seat (so a game can still start while the host is away).
+ if(mySeat<0){return false;}
+ if(mySeat===0){return true;}
+ var seat0=null, mine=null;
+ for(var i=0;i<srvLobby.length;i++){
+  if(srvLobby[i].seat===0){seat0=srvLobby[i];}
+  if(srvLobby[i].seat===mySeat){mine=srvLobby[i];}
+ }
+ if(seat0&&seat0.connected){return false;}
+ if(!mine||!mine.connected){return false;}
+ for(var j=0;j<srvLobby.length;j++){if(srvLobby[j].connected&&srvLobby[j].seat<mySeat){return false;}}
+ return true;
+}
+function syncHostFlag(){isHost=!!(roomRole&&amLogicalHost());}
+function sendSrv(msg){
+ if(!ws){return;}
+ var open=(typeof WebSocket!=="undefined"&&WebSocket.OPEN)||1;
+ if(ws.readyState!==open){return;}
+ try{ws.send(JSON.stringify(msg));}catch(e){}
+}
+function closeWsExpect(){
+ // Close the socket and ignore its late close/error: it belongs to a room
+ // we already left, a join that already failed, or a rename that replaced it.
+ wsExpectClose=true;
+ if(wsConnectTimer){clearTimeout(wsConnectTimer);wsConnectTimer=null;}
+ if(wsHelloTimer){clearTimeout(wsHelloTimer);wsHelloTimer=null;}
+ if(ws){var s=ws;ws=null;try{s.close();}catch(e){}}
+}
+function scheduleWsRetry(fn){
+ if(wsRetryTimer){return;}
+ wsRetryCount++;
+ var delay=Math.min(1000*Math.pow(2,wsRetryCount-1),8000);
+ wsRetryTimer=setTimeout(function(){wsRetryTimer=null;if(leaving||kicked){return;}fn();},delay);
+}
+function connectSrv(pending){
+ closeWsExpect(); // drop any old socket quietly (its late close is ignored)
+ wsExpectClose=false; // the new socket's close is real and must be handled
+ wsPending=pending;
+ wsAction=pending.kind;
+ if(pending.kind==="create"||pending.kind==="join"){
+  setRoomStatus("Connecting to the server… first join after a while can take up to a minute.");
+ }else{
+  setLobbyStatus("Reconnecting…");
+ }
+ var socket;
+ try{socket=new WebSocket(ROOM_SERVER_URL);}
+ catch(e){onSrvConnectFail();return;}
+ ws=socket;
+ if(wsConnectTimer){clearTimeout(wsConnectTimer);}
+ // 60s budget for the first connect: the free server sleeps after ~15 min
+ // idle, and waking it can take ~50s. Never fail at 30s for a cold start.
+ wsConnectTimer=setTimeout(function(){
+  wsConnectTimer=null;
+  if(ws===socket){closeWsExpect();onSrvConnectFail();}
+ },60000);
+ socket.onopen=function(){
+  if(ws!==socket){return;}
+  if(wsConnectTimer){clearTimeout(wsConnectTimer);wsConnectTimer=null;}
+  var p=wsPending;wsPending=null;
+  if(!p){return;}
+  if(p.kind==="create"){sendSrv({type:"create",name:p.name,cid:CLIENT_ID,n:p.n});}
+  else{sendSrv({type:"hello",code:p.code,name:p.name,cid:CLIENT_ID});}
+  if(wsHelloTimer){clearTimeout(wsHelloTimer);}
+  // The server answers a create/hello at once — 10s without a reply
+  // means the attempt died; retry it like a failed connect.
+  wsHelloTimer=setTimeout(function(){
+   wsHelloTimer=null;
+   if(ws!==socket){return;}
+   closeWsExpect();
+   onSrvConnectFail();
+  },10000);
+ };
+ socket.onmessage=function(ev){
+  if(ws!==socket){return;}
+  var m;try{m=JSON.parse(ev.data);}catch(e){return;}
+  onSrvMsg(m);
+ };
+ socket.onerror=function(){/* onclose follows and handles it */};
+ socket.onclose=function(){
+  if(ws!==socket){return;}
+  ws=null;
+  onSrvClose();
+ };
+}
+function onSrvConnectFail(){
+ // The socket never opened, or no welcome/created arrived in time.
+ // This is TRANSIENT (server asleep, network blip) — retry with backoff.
+ // A "Room not found" answer is final and never reaches this path: the
+ // server sends it first, and failJoin() already ran before the close.
+ if(leaving||kicked){return;}
+ if(wsAction==="create"){
+  // Never auto-retry a create: each attempt makes a NEW room server-side.
+  resetCreateBtn();
+  setRoomStatus("Unable to connect to the server — check your internet and tap Create again.");
+  updateStart();
+  return;
+ }
+ if(wsAction==="join"){
+  if(joining&&joinWatchdog){
+   setRoomStatus("Connection lost — trying again…");
+   scheduleWsRetry(function(){if(!joining){return;}connectSrv({kind:"join",code:roomCode,name:myName});});
+  }else{
+   failJoin("Unable to connect to the server — check your internet and tap Join again.");
   }
-  h0=(h0+a)|0;h1=(h1+b)|0;h2=(h2+c)|0;h3=(h3+d)|0;h4=(h4+e)|0;
+  return;
  }
- var out=[];
- [h0,h1,h2,h3,h4].forEach(function(h){out.push((h>>>24)&255,(h>>>16)&255,(h>>>8)&255,h&255);});
- return out;
-}
-function strBytes(s){
- var utf8=unescape(encodeURIComponent(s));
- var out=[];for(var i=0;i<utf8.length;i++)out.push(utf8.charCodeAt(i)&0xff);
- return out;
-}
-function b64Encode(bytes){
- var chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
- var out="";
- for(var i=0;i<bytes.length;i+=3){
-  var n=(bytes[i]<<16)|((bytes[i+1]||0)<<8)|(bytes[i+2]||0);
-  out+=chars[(n>>18)&63]+chars[(n>>12)&63]+(i+1<bytes.length?chars[(n>>6)&63]:"=")+(i+2<bytes.length?chars[n&63]:"=");
+ if(wsAction==="restore"){
+  scheduleWsRetry(startRestore);
+  return;
  }
- return out;
+ if(roomRole){scheduleWsRetry(startRestore);}
 }
-function hmacSha1B64(key,msg){
- var kb=strBytes(key);
- if(kb.length>64)kb=sha1Bytes(kb);
- while(kb.length<64)kb.push(0);
- var ipad=[],opad=[];
- for(var i=0;i<64;i++){ipad.push(kb[i]^0x36);opad.push(kb[i]^0x5c);}
- return b64Encode(sha1Bytes(opad.concat(sha1Bytes(ipad.concat(strBytes(msg))))));
+function onSrvClose(){
+ // The socket died unexpectedly (network drop, server restart, the
+ // server's 45s silence drop). Nothing here is final: reconnect and
+ // re-hello with the saved code + cid to reclaim the same seat.
+ if(wsExpectClose){wsExpectClose=false;return;}
+ if(leaving||kicked){return;}
+ if(wsAction==="create"||wsAction==="join"){onSrvConnectFail();return;}
+ if(wsAction==="restore"){scheduleWsRetry(startRestore);return;}
+ if(roomRole){setLobbyStatus("Reconnecting…");scheduleWsRetry(startRestore);}
 }
-function turnCreds(){
- var exp=Math.floor(Date.now()/1000)+86400; // valid 24h
- var user=exp+":ludo";
- return {username:user,credential:hmacSha1B64("openrelayprojectsecret",user)};
+function onSrvMsg(m){
+ if(!m||typeof m.type!=="string"){return;}
+ if(m.type==="ping"){sendSrv({type:"pong"});return;}
+ if(m.type==="pong"){return;}
+ if(m.type==="created"){
+  if(wsHelloTimer){clearTimeout(wsHelloTimer);wsHelloTimer=null;}
+  wsAction=null; wsRetryCount=0;
+  roomCode=m.code; mySeat=0; menuN=m.n||menuN; roomRole="host"; isHost=true;
+  joining=false; reconnecting=false; restoring=false;
+  clearJoinTimers();
+  resetCreateBtn(); resetJoinBtn();
+  setRoomStatus("Room ready — share code "+roomCode);
+  setLobbyStatus("");
+  if($("roomCode")){$("roomCode").textContent=roomCode;}
+  saveRoomSession();
+  if(!state){showLobby();}
+  return;
+ }
+ if(m.type==="welcome"){
+  if(wsHelloTimer){clearTimeout(wsHelloTimer);wsHelloTimer=null;}
+  wsAction=null; wsRetryCount=0;
+  joining=false; reconnecting=false; restoring=false;
+  clearJoinTimers();
+  resetJoinBtn(); resetCreateBtn();
+  mySeat=m.seat; menuN=m.n||menuN;
+  roomRole=(m.seat===0)?"host":"guest";
+  if(m.cid){try{localStorage.setItem("ludoClient",m.cid);}catch(e){}}
+  saveRoomSession();
+  syncHostFlag();
+  setLobbyStatus("");
+  if(m.state){applyNetState(m.state);}
+  else if(!state){showLobby();}
+  updateStart(); renderLobby();
+  return;
+ }
+ if(m.type==="lobby"){
+  srvLobby=m.players||[];
+  serverStatus=m.status||"";
+  syncHostFlag();
+  renderLobby(); updateStart();
+  return;
+ }
+ if(m.type==="state"){
+  onServerState(m);
+  return;
+ }
+ if(m.type==="room-full"){
+  if(joining){failJoin("Room is full — all seats are taken.");return;}
+  if(restoring){
+   // The room exists but my seat was taken while I was away: stay in
+   // the lobby — Reconnect retries the hello when a seat frees.
+   restoring=false;
+   setLobbyStatus("Room is full — all seats are taken.");
+   if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
+   return;
+  }
+  return;
+ }
+ if(m.type==="error"){
+  var msg=m.message||"Something went wrong — try again.";
+  if(joining){failJoin(msg);return;}
+  if(restoring){
+   if(msg.indexOf("Room not found")===0||msg.indexOf("Room code is invalid")===0||msg.indexOf("Room has already started")===0){
+    // Final: the room is gone (or not joinable any more). Stop retrying.
+    failRestore(msg);
+    return;
+   }
+   if(msg.indexOf("Room is full")===0){
+    restoring=false;
+    setLobbyStatus("Room is full — all seats are taken.");
+    if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
+    return;
+   }
+   // Anything else during a restore is transient: show it, keep retrying.
+   setLobbyStatus(msg);
+   scheduleWsRetry(startRestore);
+   return;
+  }
+  // In-room error (e.g. a double roll the server rejected): show it,
+  // never fatal — the socket stays open and the game goes on.
+  if(roomRole){
+   rollPending=false;
+   setLobbyStatus(msg);
+   hudMsg=msg; hudMsgUntil=Date.now()+2500; renderAll();
+  }
+  return;
+ }
+ if(m.type==="left"){
+  // We left (bye): the server closes the socket right after. Finish the
+  // leave even if the socket is already dead and no "left" ever arrives
+  // (leaveRoom already cleaned up at once — this is idempotent).
+  doLeaveCleanup();
+  return;
+ }
+ if(m.type==="kicked"){
+  // This seat was taken over by the same device in another tab: stop.
+  kicked=true;
+  clearJoinTimers();
+  closeWsExpect();
+  clearRoomSession();
+  roomRole=null; isHost=false; mySeat=-1; srvLobby=[];
+  showHome();
+  setRoomStatus(m.message||"You joined this seat from another tab.");
+  updateStart();
+  return;
+ }
 }
-var TURN_CREDS=turnCreds();
-// PeerJS connection config. STUN alone is not enough: when two phones sit
-// behind symmetric NAT (common on mobile data), a direct P2P connection
-// never opens and the guest's join dies silently ("Could not find that
-// room" while the host is alive). A TURN relay gives those pairs a path.
-var PEER_CONFIG={config:{iceServers:[
- {urls:"stun:stun.l.google.com:19302"},
- {urls:"turn:turn.anyfirewall.com:443?transport=tcp",username:"webrtc",credential:"webrtc"},
- {urls:"turn:staticauth.openrelay.metered.ca:80",username:TURN_CREDS.username,credential:TURN_CREDS.credential},
- {urls:"turn:staticauth.openrelay.metered.ca:443",username:TURN_CREDS.username,credential:TURN_CREDS.credential},
- {urls:"turn:staticauth.openrelay.metered.ca:443?transport=tcp",username:TURN_CREDS.username,credential:TURN_CREDS.credential}
-]}};
-function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode+"&v="+APP_VERSION;}
-function leaveRoom(){
- if(isHost&&conns.length){conns.forEach(function(c){try{c.conn.send({type:"host-left"});}catch(e){}});}
- else{sendToHost({type:"bye"});}
- destroyPeer();
- roomRole=null; isHost=false; mySeat=-1; myLastSeat=-1;
- seatCid={};
- migratedHost=false; knownNames={}; hostUnavailableCount=0;
- killTakeover();
+function onServerState(m){
+ var s=m.state, ev=m.event;
+ if(!s){return;}
+ rollPending=false;
+ if(ev&&state&&state.gameId===s.gameId&&(ev.kind==="move"||ev.kind==="capture"||ev.kind==="win")){
+  // Animate the move from the state we already hold (the pawn is still
+  // at its old cell), then apply the new state at the right beat.
+  animateNetMove(ev,s);
+  return;
+ }
+ if(ev){playNetEventSound(ev);showNetEventMsg(ev);}
+ applyNetState(s);
+}
+function playNetEventSound(ev){
+ if(ev.kind==="roll"&&ev.firstSix){playSound("sndFirst6");}
+ if(ev.kind==="win"){beep(880,0.25);}
+}
+function showNetEventMsg(ev){
+ if(ev.kind==="three-sixes"){hudMsg=displayName(ev.seat)+" rolled 3 sixes in a row — turn lost!";hudMsgUntil=Date.now()+2500;}
+ else if(ev.kind==="timeout"){hudMsg=displayName(ev.seat)+" ran out of time — turn passed.";hudMsgUntil=Date.now()+2500;}
+ else if(ev.kind==="leave"){hudMsg=displayName(ev.seat)+" left the game.";hudMsgUntil=Date.now()+2500;}
+ else if(ev.kind==="abandoned"){hudMsg="Everyone left — game over.";hudMsgUntil=Date.now()+2500;}
+}
+async function animateNetMove(ev,s){
+ // A second state arriving mid-animation waits its turn (moves are
+ // sequential, so this is only a timeout/leave racing the animation).
+ if(animatingNet){pendingNetState={state:s,event:ev};return;}
+ animatingNet=true;
+ var p=ev.seat, t=ev.token;
+ var fromSt=(state&&state.players[p])?state.players[p].steps[t]:-1;
+ var finalSt=ev.steps;
+ var col=playerSet(state.n)[p];
+ if(ev.kind==="capture"){playSound("sndKill");}
+ state.phase="anim"; state.movable=[];
+ await glidePawn(p,t,fromSt,finalSt);
+ if(ev.kind==="capture"&&ev.victim){
+  var vg=$("pawn-"+ev.victim.p+"-"+ev.victim.t);
+  var ag=$("pawn-"+p+"-"+t);
+  var vcol=playerSet(state.n)[ev.victim.p];
+  var acol=playerSet(state.n)[p];
+  var apt=cellPct(tokenRC(col,finalSt,t));
+  var homePt=cellPct(YARD_SLOTS[vcol][ev.victim.t]);
+  var glow1=capGlowAt(apt,COLORS[acol].hex,false);
+  if(ag){ag.classList.add("cap-bounce");}
+  if(vg){vg.classList.add("cap-flash");}
+  await sleep(300);
+  if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
+  if(ag){ag.classList.remove("cap-bounce");}
+  if(vg){vg.classList.remove("cap-flash");}
+  var parts=capParticles(apt,COLORS[vcol].hex);
+  if(vg){vg.classList.add("cap-shrink");}
+  await sleep(450);
+  parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
+  // Apply the new state now: the victim jumps to its yard slot.
+  applyNetState(s);
+  if(vg){
+   vg.classList.remove("cap-shrink");
+   vg.classList.add("cap-jump");
+   vg.style.left=homePt.x+"%";
+   vg.style.top=homePt.y+"%";
+   void vg.offsetWidth;
+   vg.classList.remove("cap-jump");
+   vg.classList.add("cap-grow");
+  }
+  var glow2=capGlowAt(homePt,COLORS[vcol].hex,true);
+  await sleep(500);
+  if(glow2&&glow2.parentNode){glow2.parentNode.removeChild(glow2);}
+  if(vg){vg.classList.remove("cap-grow");}
+ }else{
+  applyNetState(s);
+ }
+ animatingNet=false;
+ if(pendingNetState){var pn=pendingNetState;pendingNetState=null;onServerState(pn);}
+}
+function failJoin(msg){
+ // Final failure for this code (Room not found, Room is full, Room has
+ // already started, invalid code): stop everything, free the button.
+ joining=false;
+ clearJoinTimers();
+ closeWsExpect();
+ roomRole=null; isHost=false; mySeat=-1; srvLobby=[];
  clearRoomSession();
- reconnecting=false; reconnectTries=0; peerDown=false; hostLeftSeen=false;
- if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+ resetJoinBtn();
+ setRoomStatus(msg);
+ $("lobby").classList.add("hidden");
+ updateStart();
+}
+function failRestore(msg){
+ // A restore that can never succeed (the room is gone): stop retrying,
+ // drop the dead session, land on Home with the reason on the menu.
+ restoring=false; reconnecting=false;
+ clearJoinTimers();
+ closeWsExpect();
+ clearRoomSession();
+ roomRole=null; isHost=false; mySeat=-1; srvLobby=[];
  if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
- pendingNames={};
- guestLobby=[];
+ $("lobby").classList.add("hidden");
+ showHome();
+ setRoomStatus(msg);
+ updateStart();
+}
+
+
+function startRestore(){
+ // Reconnect and re-hello with the saved code + cid: the server gives
+ // the same seat back (in the lobby or mid-game, tokens intact).
+ if(!roomRole){return;}
+ if(ws&&ws.readyState===1){return;} // already connected: nothing to do
+ var s=readRoomSession();
+ var code=(s&&s.code)?s.code:roomCode;
+ var name=(s&&s.name)?s.name:(roomRole==="host"?hostName:myName);
+ menuN=(s&&s.n)?s.n:menuN;
+ roomCode=code;
+ restoring=true;
+ connectSrv({kind:"restore",code:code,name:name});
+}
+
+
+function doLeaveCleanup(){
+ leaving=false;
+ closeWsExpect();
+ roomRole=null; isHost=false; mySeat=-1;
+ srvLobby=[]; serverStatus="";
+ rollPending=false; animatingNet=false; pendingNetState=null;
+ restoring=false; reconnecting=false;
+ clearRoomSession();
+ if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
  hostName="";
  myName="";
  roomCode="";
@@ -1511,73 +1738,33 @@ function leaveRoom(){
  $("lobby").classList.add("hidden");
  showHome();
 }
-function sendToHost(msg){if(hostConn){try{hostConn.send(msg);}catch(e){}}}
-function makeCode(){
- var chars="ABCDEFGHJKMNPQRSTVWXYZ23456789", out="";
- for(var i=0;i<6;i++){out+=chars[Math.floor(Math.random()*chars.length)];}
- return out;
+
+function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode+"&v="+APP_VERSION;}
+function leaveRoom(){
+ if(leaving){return;}
+ leaving=true;
+ clearJoinTimers();
+ if(wsRetryTimer){clearTimeout(wsRetryTimer);wsRetryTimer=null;}
+ // Tell the server we are gone for good (it frees the lobby seat at
+ // once / marks the mid-game seat Left); then clean up locally even if
+ // the socket is already dead and no "left" reply ever arrives.
+ if(ws){sendSrv({type:"bye"});}
+ doLeaveCleanup();
 }
+
+
 function setRoomStatus(t){var el=$("roomStatus");if(el){el.textContent=t||"";}}
-var peerOpenTimer=null, connTimer=null, welcomeTimer=null;
-function clearRoomTimers(){
- if(peerOpenTimer){clearTimeout(peerOpenTimer);peerOpenTimer=null;}
- if(connTimer){clearTimeout(connTimer);connTimer=null;}
- if(welcomeTimer){clearTimeout(welcomeTimer);welcomeTimer=null;}
-}
-function destroyPeer(){
- clearRoomTimers();
- stopHeartbeat();
- stopHostWatch();
- stopProbe();
- if(peer){try{peer.destroy();}catch(e){}}
- peer=null;conns=[];hostConn=null;isHost=false;mySeat=-1;
-}
-function stopHeartbeat(){
- if(hbTimer){clearInterval(hbTimer);hbTimer=null;}
- if(guestHbTimer){clearInterval(guestHbTimer);guestHbTimer=null;}
-}
-function pruneDeadConns(){
- // A guest whose phone drops silently never fires "close" on the host, so
- // its conn sits in `conns` with open===true and its seat stays taken
- // forever — the next friend then gets "room-full" although seats look
- // free. A conn is dead when it closed OR when nothing was heard from it
- // for HB_DEAD ms. Only the transport entry is dropped; seatCid keeps the
- // seat so the same device can still reclaim it when it comes back.
- var now=Date.now(), changed=false;
- for(var i=conns.length-1;i>=0;i--){
-  var c=conns[i];
-  if(!c.conn||c.conn.open===false||now-(c.lastSeen||0)>HB_DEAD){conns.splice(i,1);changed=true;}
- }
- return changed;
-}
-function startHeartbeat(){
- stopHeartbeat();
- hbTimer=setInterval(function(){
-  if(!isHost||!peer||peer.destroyed){stopHeartbeat();return;}
-  var now=Date.now();
-  conns.forEach(function(c){try{c.conn.send({type:"ping",t:now});}catch(e){}});
-  if(pruneDeadConns()){
-   renderLobby();
-   broadcastLobby();
-   updateStart();
-  }
- },HB_INTERVAL);
-}
-function startGuestWatchdog(){
- if(guestHbTimer){clearInterval(guestHbTimer);guestHbTimer=null;}
- lastHostMsg=Date.now();
- guestHbTimer=setInterval(function(){
-  if(roomRole!=="guest"||reconnecting){return;}
-  if(Date.now()-lastHostMsg>HB_DEAD){
-   onHostDown();
-  }
- },HB_INTERVAL);
-}
+
+
+
+
+
+
 function saveRoomSession(){
  if(!roomRole||!roomCode){return;}
  // A migrated host restores as ITSELF (its own name), not as the original
  // host whose seat 0 it displays.
- try{sessionStorage.setItem(ROOM_KEY,JSON.stringify({role:roomRole,code:roomCode,name:roomRole==="host"?(migratedHost?myName:hostName):myName,n:menuN}));}catch(e){}
+ try{sessionStorage.setItem(ROOM_KEY,JSON.stringify({role:roomRole,code:roomCode,name:roomRole==="host"?hostName:myName,n:menuN}));}catch(e){}
 }
 function clearRoomSession(){
  try{sessionStorage.removeItem(ROOM_KEY);}catch(e){}
@@ -1585,394 +1772,34 @@ function clearRoomSession(){
 function readRoomSession(){
  try{var s=sessionStorage.getItem(ROOM_KEY);return s?JSON.parse(s):null;}catch(e){return null;}
 }
-function setReconnectingUI(){
- if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Reconnecting…");}
-}
-function scheduleReconnect(){
- if(!roomRole||reconnecting){return;}
- reconnecting=true; reconnectTries=0; hostUnavailableCount=0;
- if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
- setReconnectingUI();
- attemptReconnect();
-}
-function attemptReconnect(){
- if(!roomRole){reconnecting=false;return;}
- lastReconnectAttempt=Date.now();
- // A fresh Join is in flight — its peer/timers are shared globals, so a
- // restore attempt here would destroyPeer() the new join mid-flight and
- // wipe its timers, stranding the button on "Joining…" forever. Don't
- // drop the reconnect: retry shortly, once the join has settled.
- if(joining){
-  if(!reconnectTimer){reconnectTimer=setTimeout(function(){reconnectTimer=null;attemptReconnect();},2000);}
-  return;
- }
- // A host whose broker socket died often hits "ID is taken" for a while:
- // the server still holds the stale registration until ITS cleanup runs
- // (up to ~a minute when the phone slept). The host must keep trying so
- // new guests can find the room again — an open host tab IS the room, so
- // a host never gives up (a guest only needs a few tries). If a migrated
- // guest now holds the id, the unavailable-id path in tryCreate falls
- // back to rejoining as a guest instead of retrying forever as host.
- var maxTry=(roomRole==="host")?Infinity:3;
- if(reconnectTries>=maxTry){
-  reconnecting=false;
-  setLobbyStatus("Connection lost — could not reconnect.");
-  if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
-  return;
- }
- reconnectTries++;
- if(roomRole==="host"){setLobbyStatus("Connection lost — bringing the room back online… (try "+reconnectTries+")");}
- if(roomRole==="host"){restoreHost();}else{restoreGuest();}
-}
-function reconnectFailed(){
- if(!reconnecting||reconnectTimer){return;}
- var delay=(roomRole==="host")?5000:1200*reconnectTries;
- reconnectTimer=setTimeout(function(){reconnectTimer=null;attemptReconnect();},delay);
-}
-function reconnectDone(){
- if(!reconnecting){return;}
- reconnecting=false; reconnectTries=0; peerDown=false; hostUnavailableCount=0;
- if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
- if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
- setLobbyStatus("");
- killTakeover(); // a host answered: no takeover is needed any more
-}
-function restoreHost(){
- var s=readRoomSession();
- var code=(s&&s.code)?s.code:roomCode;
- var name=(s&&s.name)?s.name:hostName;
- menuN=(s&&s.n)?s.n:menuN;
- hostName=sanitizeName(name||"");
- roomCode=code; roomRole="host"; peerDown=false;
- destroyPeer();
- // No setReconnectingUI() here: attemptReconnect already set the
- // "(X/12)" status, and this would overwrite it with plain text.
- ensurePeer(function(ok){
-  if(!ok){reconnectFailed();return;}
-  tryCreate(0,code,reconnectFailed);
- });
-}
-function restoreGuest(){
- var s=readRoomSession();
- var code=(s&&s.code)?s.code:roomCode;
- var name=(s&&s.name)?s.name:myName;
- menuN=(s&&s.n)?s.n:menuN;
- myName=sanitizeName(name||"");
- roomCode=code; roomRole="guest"; peerDown=false;
- destroyPeer();
- setReconnectingUI();
- ensurePeer(function(ok){
-  if(!ok){reconnectFailed();return;}
-  tryJoin(code,{restore:true,onFail:reconnectFailed});
- });
-}
+
+
+
+
+
+
+
 // --- Host liveness + migration (V5.18) ---
-function reconnectStuck(){
- // A reconnect with no timer pending and no attempt for 30s cannot be in
- // flight (a restore attempt resolves within ~20s) — it was dropped, and
- // nothing will ever restart it unless something checks.
- return reconnecting&&!reconnectTimer&&Date.now()-lastReconnectAttempt>30000;
-}
-function checkHostLiveness(){
- // Host-only. Runs when the tab comes back to the foreground, when the
- // network comes back, and on a slow periodic timer.
- if(roomRole!=="host"){return;}
- if(reconnecting){
-  if(reconnectStuck()){attemptReconnect();}
-  return;
- }
- if(joining){return;}
- if(!peer||peer.destroyed){scheduleReconnect();return;}
- if(peer.disconnected){scheduleReconnect();return;}
- if(document.hidden){return;}
- // Guests answering pings prove the socket is alive: never disturb a
- // healthy host while guests are connected and the game is running.
- var now=Date.now(), alive=false;
- for(var i=0;i<conns.length;i++){if(now-(conns[i].lastSeen||0)<=HB_DEAD){alive=true;break;}}
- if(alive){return;}
- probeHostLiveness();
-}
-function stopProbe(){
- if(probeTimer){clearTimeout(probeTimer);probeTimer=null;}
- probeInFlight=false;
-}
-function probeHostLiveness(){
- // Prove the broker still lists this room id AND that it is still ME
- // holding it, by connecting to it from a throwaway peer (same public
- // API the game already uses — no broker internals, no extra dependency).
- // The host's connection handler seats nothing for a probe, but answers
- // "who holds this room?" with its own device id. Outcomes:
- //  "dead":   the id is gone — re-register as host.
- //  "taken":  someone else holds the id (a migrated guest) — rejoin as a
- //            guest instead of sitting here as a zombie host.
- //  "alive":  I still hold it — do nothing.
- //  "unknown": the probe itself could not run (no network, or an old host
- //            build that never answers) — leave the host alone; destroying
- //            a possibly-healthy host would only make things worse.
- if(probeInFlight||!roomCode){return;}
- probeInFlight=true;
- var done=false, pPeer=null, pConn=null, ackTimer=null;
- function fin(verdict){
-  if(done){return;}
-  done=true; probeInFlight=false;
-  if(probeTimer){clearTimeout(probeTimer);probeTimer=null;}
-  if(ackTimer){clearTimeout(ackTimer);ackTimer=null;}
-  if(pPeer){try{pPeer.destroy();}catch(e){} pPeer=null;}
-  if(verdict==="dead"){scheduleReconnect();}
-  else if(verdict==="taken"){joinAsGuestNow();}
- }
- probeTimer=setTimeout(function(){fin("unknown");},10000);
- try{
-  pPeer=new Peer(PEER_CONFIG);
-  pPeer.on("open",function(){
-   try{pConn=pPeer.connect("ludo-"+roomCode,{metadata:{probe:1}});}catch(e){fin("unknown");return;}
-   pConn.on("open",function(){
-    try{pConn.send({type:"probe-who"});}catch(e){fin("unknown");return;}
-    // An old host build never answers: treat that as alive, not dead.
-    ackTimer=setTimeout(function(){fin("alive");},3000);
-   });
-   pConn.on("data",function(msg){
-    if(msg&&msg.type==="probe-ack"){
-     fin(msg.host===CLIENT_ID?"alive":"taken");
-    }
-   });
-   pConn.on("error",function(err){
-    if(err&&err.type==="peer-unavailable"){fin("dead");}else{fin("unknown");}
-   });
-  });
-  pPeer.on("error",function(err){
-   if(err&&err.type==="peer-unavailable"){fin("dead");}else{fin("unknown");}
-  });
- }catch(e){fin("unknown");}
-}
+
+
+
+
 // Rejoin the room as a guest with this device's own name — used when a
 // migrated guest now holds the room id, whether discovered by the liveness
 // probe or by repeated "ID is taken" re-register failures.
-function joinAsGuestNow(){
- hostUnavailableCount=0;
- var ri=$("roomInput"); if(ri){ri.value=roomCode;}
- var ni=$("onlineNameInput"); if(ni){ni.value=migratedHost?myName:hostName;}
- joinRoom();
-}
-function startHostWatch(){
- if(hostWatchTimer){return;}
- hostWatchTimer=setInterval(function(){checkHostLiveness();},20000);
-}
-function stopHostWatch(){
- if(hostWatchTimer){clearInterval(hostWatchTimer);hostWatchTimer=null;}
-}
-function onHostDown(){
- // The host connection died (not a clean leave: host-left is handled
- // elsewhere and never calls this). Keep trying to rejoin it AND let the
- // senior guest take the room over, so the game survives the host.
- peerDown=true;
- scheduleReconnect();
- maybeTakeover();
-}
-function knownNamesFromRoom(){
- // What the room looks like right now, by seat — the record the new host
- // takes over: names from the game state (in a match) or the lobby list.
- var out={};
- if(state){
-  for(var s=0;s<state.n;s++){if(state.names&&state.names[s]){out[s]=sanitizeName(state.names[s]);}}
- }else{
-  guestLobby.forEach(function(p){if(p.name){out[p.seat]=sanitizeName(p.name);}});
- }
- // The restore loop wipes mySeat to -1 while it retries, so the seat I
- // held before the drop is myLastSeat — don't lose my own name from the
- // record the new host takes over.
- var s3=(mySeat>0?mySeat:myLastSeat);
- if(s3>0&&myName&&!out[s3]){out[s3]=sanitizeName(myName);}
- return out;
-}
-function presentGuestSeats(){
- // Guest seats currently in the room, lowest first — from the game state
- // (in a match, leavers excluded) or the lobby list (before the start).
- var seats=[];
- if(state){
-  for(var s=1;s<state.n;s++){if(!state.left[s]){seats.push(s);}}
- }else if(guestLobby.length){
-  guestLobby.forEach(function(p){if(p.seat>0){seats.push(p.seat);}});
-  seats.sort(function(a,b){return a-b;});
- }else{var s2=(mySeat>0?mySeat:myLastSeat); if(s2>0){seats.push(s2);}}
- return seats;
-}
-function myTakeoverRank(seat){
- // Rank among the guests still in the room — lowest seat tries first.
- // `seat` is the seat I held before the drop: the restore loop's
- // destroyPeer() wipes the live mySeat to -1 while it retries, so the
- // caller passes myLastSeat when mySeat is already gone.
- var seats=presentGuestSeats();
- for(var i=0;i<seats.length;i++){if(seats[i]===seat){return i;}}
- return 99;
-}
-function maybeTakeover(){
- // The host is gone. The senior guest still in the room takes the room
- // over after a short stagger (lower seats try first, so only one guest
- // attempts at a time). If someone else holds the id by then, the attempt
- // fails with unavailable-id and this guest just rejoins as a guest.
- var seat=(mySeat>0?mySeat:myLastSeat);
- if(roomRole!=="guest"||seat<=0){return;}
- if(takeoverTimer||takeoverInFlight){return;}
- var rank=myTakeoverRank(seat);
- if(rank>2){return;}
- takeoverTimer=setTimeout(function(){takeoverTimer=null;tryTakeover();},5000+rank*3000);
-}
-function cancelTakeover(){
- if(takeoverTimer){clearTimeout(takeoverTimer);takeoverTimer=null;}
- takeoverTries=0;
-}
-function killTakeover(){
- cancelTakeover();
- if(takeoverPeer){try{takeoverPeer.destroy();}catch(e){} takeoverPeer=null;}
- takeoverInFlight=false;
-}
-function tryTakeover(){
- // The seat I held before the connection died: the restore loop's
- // destroyPeer() wipes the live mySeat to -1 while it retries, so the
- // live seat is gone by the time this fires — myLastSeat is the record
- // of it. Without this, the guard below rejected every takeover.
- var keepSeat=(mySeat>0?mySeat:myLastSeat);
- if(roomRole!=="guest"||keepSeat<=0){return;}
- if(takeoverInFlight){return;}
- // A host may have answered since the stagger was scheduled.
- if(hostConn&&hostConn.open){return;}
- takeoverInFlight=true;
- takeoverTries++;
- var keepName=myName, code=roomCode;
- var keepNames=knownNamesFromRoom();
- var done=false, openTimer=null;
- function abortToGuest(){
-  if(done){return;}
-  done=true; takeoverInFlight=false;
-  if(openTimer){clearTimeout(openTimer);openTimer=null;}
-  if(takeoverPeer){try{takeoverPeer.destroy();}catch(e){} takeoverPeer=null;}
-  // Leave the restore loop alone if it is running: poking it would
-  // destroyPeer() a join that is still in flight. And do NOT restart it
-  // if it already gave up (3 guest tries): the guest retry count is 3 by
-  // design, and the Reconnect button is the way back. The takeover retry
-  // chain below is the path that keeps trying to revive the room.
-  scheduleTakeoverRetry();
- }
- function scheduleTakeoverRetry(){
-  // Still a disconnected guest? Try again in a while — the broker may
-  // still hold the old host's stale registration. The retry stops the
-  // moment any host answers (welcome) or this guest leaves. My live seat
-  // is wiped by the restore loop's destroyPeer(), so myLastSeat is the
-  // record of whether I still hold one.
-  if(roomRole!=="guest"||(mySeat<=0&&myLastSeat<=0)){return;}
-  if(hostConn&&hostConn.open){return;}
-  if(takeoverTimer){return;}
-  takeoverTimer=setTimeout(function(){takeoverTimer=null;tryTakeover();},8000);
- }
- try{
-  takeoverPeer=new Peer("ludo-"+code,PEER_CONFIG);
-  openTimer=setTimeout(function(){abortToGuest();},20000);
-  takeoverPeer.on("open",function(){
-   if(openTimer){clearTimeout(openTimer);openTimer=null;}
-   if(done){return;}
-   if(roomRole!=="guest"||(hostConn&&hostConn.open)){abortToGuest();return;}
-   done=true; takeoverInFlight=false;
-   becomeHost(takeoverPeer,keepSeat,keepName,keepNames);
-  });
-  takeoverPeer.on("error",function(err){
-   if(done){return;}
-   // unavailable-id: someone else holds the room (another guest took it,
-   // or the old host came back) — back off and rejoin as a guest. Any
-   // other error: same back-off, with a retry scheduled by abortToGuest.
-   abortToGuest();
-  });
- }catch(e){abortToGuest();}
-}
-function becomeHost(newPeer,keepSeat,keepName,keepNames){
- // Stop the guest restore loop FIRST, while the old peer is still the
- // global one: destroyPeer() kills it and its pending timers (which would
- // otherwise fire on the new host peer after the swap). reconnecting=true
- // keeps stale guest close-handlers quiet during the swap.
- reconnecting=true;
- if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
- cancelTakeover();
- if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
- joining=false;
- destroyPeer(); // clears conns/hostConn/isHost/mySeat + timers; peer=null
- peer=newPeer; takeoverPeer=null;
- mySeat=keepSeat; myLastSeat=keepSeat; myName=keepName; isHost=true; roomRole="host";
- migratedHost=true; knownNames=keepNames||{};
- pendingNames={};
- for(var s in knownNames){pendingNames[s]=knownNames[s];}
- pendingNames[mySeat]=myName;
- hostConn=null; guestLobby=[];
- seatCid={};
- // Serve guests with the same handler the original host used.
- peer.on("connection",onHostConnection);
- peer.on("error",function(err){
-  // A later drop takes the normal host reconnect path (which now also
-  // knows how to fall back to rejoining as a guest if someone else holds
-  // the id).
-  if(roomRole==="host"){scheduleReconnect();}
- });
- peer.on("disconnected",function(){
-  if(roomRole==="host"){scheduleReconnect();}
- });
- startHeartbeat();
- startHostWatch();
- saveRoomSession();
- reconnecting=false; reconnectTries=0; peerDown=false; hostUnavailableCount=0;
- if($("roomCode")){$("roomCode").textContent=roomCode;} // the lobby code panel: a guest page never set it
- if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
- setLobbyStatus("");
- setRoomStatus("Room ready — share code "+roomCode);
- if(!state){
-  showLobby(true);
-  broadcastLobby();
- }else{
-  // Game in progress: resume the 30s turn authority with the state held.
-  $("lobby").classList.add("hidden");
-  $("game").classList.remove("hidden");
-  resetTurnTimer();
-  renderAll();
-  broadcast();
- }
- updateStart();
-}
-function maybeJoinAsGuest(){
- // The room id is held by someone else (a migrated guest took it over).
- // Probe it as a guest: a live host answers with a welcome — rejoin as
- // that guest, reclaiming the old host's seat by name. Nobody answers:
- // the id is just stale-held by the broker, so keep re-registering.
- if(!roomCode||roomRole!=="host"||joining){return;}
- var code=roomCode, nm=hostName||"";
- var done=false, pPeer=null, pConn=null, pTimer=null;
- function fin(alive){
-  if(done){return;}
-  done=true;
-  if(pTimer){clearTimeout(pTimer);pTimer=null;}
-  if(pPeer){try{pPeer.destroy();}catch(e){} pPeer=null;}
-  if(alive){
-   joinAsGuestNow();
-  }else{
-   hostUnavailableCount=0;
-   if(reconnecting){reconnectFailed();}
-  }
- }
- pTimer=setTimeout(function(){fin(false);},12000);
- try{
-  pPeer=new Peer(PEER_CONFIG);
-  pPeer.on("open",function(){
-   try{pConn=pPeer.connect("ludo-"+code,{metadata:{cid:CLIENT_ID,name:nm}});}catch(e){fin(false);return;}
-   pConn.on("open",function(){fin(true);});
-   pConn.on("data",function(msg){
-    if(msg&&(msg.type==="welcome"||msg.type==="room-full")){fin(true);}
-   });
-   pConn.on("error",function(err){
-    if(err&&err.type==="peer-unavailable"){fin(false);}
-   });
-  });
-  pPeer.on("error",function(err){
-   if(err&&err.type==="peer-unavailable"){fin(false);}
-  });
- }catch(e){fin(false);}
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
 function restoreSavedRoom(saved){
  roomCode=saved.code||"";
  menuN=saved.n||4;
@@ -1982,9 +1809,8 @@ function restoreSavedRoom(saved){
  else{myName=sanitizeName(saved.name||"");}
  showLobby();
  setLobbyStatus("Reconnecting…");
- reconnecting=true; reconnectTries=0;
- if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
- attemptReconnect();
+ reconnecting=true;
+ startRestore();
 }
 function resetCreateBtn(){
  var b=$("createBtn");if(b){b.disabled=false;b.textContent="Create";b.classList.remove("sel");}
@@ -1992,322 +1818,41 @@ function resetCreateBtn(){
 function resetJoinBtn(){
  var b=$("joinBtn");if(b){b.disabled=false;b.textContent="Join";b.classList.remove("sel");}
 }
-function ensurePeer(cb){
- if(typeof Peer!=="undefined"){cb(true);return;}
- var s=document.createElement("script");
- s.src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
- var done=false;
- function fin(ok){if(done){return;}done=true;cb(ok);}
- s.onload=function(){fin(typeof Peer!=="undefined");};
- s.onerror=function(){fin(false);};
- // A stalled CDN fetch fires neither onload nor onerror — without this the
- // Create/Join button would sit on "Creating…"/"Joining…" forever.
- setTimeout(function(){fin(false);},10000);
- (document.head||document.documentElement).appendChild(s);
-}
+
 function createRoom(){
  var btn=$("createBtn");
- destroyPeer();
- cancelStaleRestore();
- clearJoinRetry(); // abandoning a Join to create instead: no retry may fire later
- joining=false; // the abandoned join's button guard must not block a later Join tap
+ closeWsExpect();
+ clearJoinTimers();
+ joining=false; restoring=false;
  resetJoinBtn();
- roomRole=null;peerDown=false;hostLeftSeen=false;
- seatCid={};
+ roomRole=null;
  $("roomCode").textContent="";
  setRoomStatus("");
  if(btn){btn.disabled=true;btn.textContent="Creating…";}
- setRoomStatus("Creating room…");
+ setRoomStatus("Connecting to the server… first join after a while can take up to a minute.");
  hostName=sanitizeName(($("onlineNameInput")&&$("onlineNameInput").value)||"");
  try{localStorage.setItem("ludoLastName",hostName);}catch(e){}
- ensurePeer(function(ok){
-  if(!ok){
-   resetCreateBtn();
-   setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
-   updateStart();
-   return;
-  }
-  tryCreate(0);
- });
+ connectSrv({kind:"create",name:hostName,n:menuN});
 }
 // One host connection handler, shared by a fresh room and by a guest that
 // took the room over (V5.18 migration): both serve guests the same way.
-function onHostConnection(conn){
- // Liveness probe (V5.18): opens a connection only to prove the broker
- // registration is alive. Never a player: no seat, no welcome.
- // The probe asks "who holds this room?" — the host answers with its own
- // device id, so a returning original host can tell a MIGRATED guest
- // (different id) holds the room now and rejoin as a guest instead of
- // sitting there as a zombie host. (The probe peer closes its side after
- // the answer.)
- if(conn.metadata&&conn.metadata.probe){
-  conn.on("data",function(msg){
-   if(msg&&msg.type==="probe-who"){try{conn.send({type:"probe-ack",host:CLIENT_ID});}catch(e){}}
-  });
-  return;
- }
- conn.on("open",function(){
-  var cid=(conn.metadata&&conn.metadata.cid)||"";
-  var metaName=(conn.metadata&&conn.metadata.name)?sanitizeName(conn.metadata.name):"";
-  var seat=-1;
-  // The original host coming back: its name IS the room's seat 0, and a
-  // migrated host must let it straight back into that seat (a normal
-  // reconnect would get room-full if every guest seat is taken).
-  if(migratedHost&&metaName&&knownNames[0]&&metaName===knownNames[0]){
-   var held0=false;
-   for(var h=0;h<conns.length;h++){if(conns[h].seat===0){held0=true;break;}}
-   if(!held0){seat=0;}
-  }
-  if(seat<0&&cid){
-   // Reclaim: this device already owns a seat here (reconnect after a
-   // drop). On a migrated host seat 0 is included: the original host's
-   // cid was recorded there when it first came back.
-   for(var s=(migratedHost?0:1);s<menuN;s++){if(seatCid[s]===cid){seat=s;break;}}
-  }
-  if(seat>=0){
-   // Drop any stale entry still holding this seat (old dead conn).
-   for(var i=conns.length-1;i>=0;i--){if(conns[i].seat===seat){conns.splice(i,1);}}
-  }else{
-   // Lowest free seat; prune dead conns first (silent drops never fire
-   // "close", so without this a dead guest's seat stays taken). The
-   // migrated host sits in a guest seat itself (mySeat>0): that seat is
-   // taken by the host, not by any conn, so never hand it to a guest —
-   // otherwise the first rejoining guest steals the host's seat and the
-   // lobby shows the guest under the host's name.
-   pruneDeadConns();
-   for(var s2=1;s2<menuN;s2++){
-    if(migratedHost&&s2===mySeat){continue;}
-    var taken=false;
-    for(var k=0;k<conns.length;k++){if(conns[k].seat===s2){taken=true;break;}}
-    if(!taken){seat=s2;break;}
-   }
-  }
-  if(seat<0){try{conn.send({type:"room-full"});}catch(e){}return;}
-  if(cid){seatCid[seat]=cid;}
-  conns.push({conn:conn,seat:seat,lastSeen:Date.now()});
-  conn.send({type:"welcome",seat:seat,n:menuN});
-  broadcastLobby();
-  // Look the seat up per message, never capture it: a hello can MOVE this
-  // conn to another seat (cid/name reclaim), and a captured old seat
-  // would make every later roll/move/heartbeat stamp the wrong seat.
-  conn.on("data",function(msg){onGuestMsg(msg,currentSeatOf(conn));});
-  conn.on("close",function(){onGuestConnClosed(conn,currentSeatOf(conn));});
-  updateStart();
- });
-}
-function currentSeatOf(connObj){
- for(var i=0;i<conns.length;i++){if(conns[i].conn===connObj){return conns[i].seat;}}
- return -1;
-}
-function tryCreate(attempt,fixedCode,onFail){
- var btn=$("createBtn");
- roomCode=fixedCode||makeCode();
- setRoomStatus("Creating room…");
- peer=new Peer("ludo-"+roomCode,PEER_CONFIG);
- peerOpenTimer=setTimeout(function(){
-  peerOpenTimer=null;
-  var p=peer;peer=null;
-  if(p){try{p.destroy();}catch(e){}}
-  if(fixedCode){if(onFail){onFail();}return;}
-  if(attempt===0){tryCreate(1);return;}
-  resetCreateBtn();
-  setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
-  updateStart();
- },20000);
- peer.on("open",function(){
-  clearRoomTimers();
-  isHost=true;mySeat=0;roomRole="host";
-  hostUnavailableCount=0;
-  startHeartbeat();
-  startHostWatch();
-  $("roomCode").textContent=roomCode;
-  setRoomStatus("Room ready — share code "+roomCode);
-  if(btn){btn.textContent="Created";btn.classList.add("sel");}
-  updateStart();
-  saveRoomSession();
-  if(!state){showLobby();broadcastLobby();}
-  if(reconnecting){reconnectDone();}
- });
- peer.on("connection",onHostConnection);
- peer.on("error",function(err){
-  var type=err&&err.type;
-  if(type==="unavailable-id"&&attempt===0&&!fixedCode){
-   clearRoomTimers();
-   try{peer.destroy();}catch(e){}
-   peer=null;
-   tryCreate(1);
-   return;
-  }
-  // fixedCode + still reconnecting = a restore attempt failing: retry via onFail.
-  // Once the restored peer has OPENED (reconnectDone ran), a later drop is a
-  // live-room drop and must take the normal host reconnect path below —
-  // otherwise a restored room dies silently on its first disconnect.
-  if(fixedCode&&reconnecting){
-   clearRoomTimers();
-   var p2=peer;peer=null;
-   if(p2){try{p2.destroy();}catch(e){}}
-   // "ID is taken" while re-registering: usually the broker still holds
-   // OUR stale registration (it clears within ~a minute) — keep retrying
-   // as host. But if a migrated guest now holds the id, retrying as host
-   // fights them; after a few tries, check whether a live host answers
-   // and rejoin as a guest instead.
-   if(type==="unavailable-id"){
-    hostUnavailableCount++;
-    if(hostUnavailableCount>=4){maybeJoinAsGuest();return;}
-   }else{hostUnavailableCount=0;}
-   if(onFail){onFail();}
-   return;
-  }
-  if(roomRole==="host"){
-   // Transient drop while hosting a room: keep the room and restore it.
-   scheduleReconnect();
-   return;
-  }
-  destroyPeer();
-  resetCreateBtn();
-  setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
-  updateStart();
- });
- peer.on("disconnected",function(){
-  // Same as the error handler above: only a still-pending restore attempt
-  // goes to onFail; an established restored room reconnects normally.
-  if(fixedCode&&reconnecting){
-   clearRoomTimers();
-   var p3=peer;peer=null;
-   if(p3){try{p3.destroy();}catch(e){}}
-   if(onFail){onFail();}
-   return;
-  }
-  if(roomRole==="host"){scheduleReconnect();return;}
-  setRoomStatus("Connection lost — tap Create again.");
-  resetCreateBtn();
-  updateStart();
- });
-}
-function onGuestMsg(msg,seat){
- // Any message proves this conn is alive — stamp it for the heartbeat sweep.
- for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){conns[i].lastSeen=Date.now();break;}}
- if(msg&&msg.type==="pong"){return;}
- if(msg&&msg.type==="hello"){
-  pendingNames[seat]=sanitizeName(msg.name||"");renderLobby();broadcastLobby();
-  var hcid=msg.cid||"";
-  if(hcid&&!seatCid[seat]){
-   // Metadata was missing at connect time: the guest may have taken a
-   // different seat than the one their tokens live at. Move them back.
-   // Search FIRST: assigning seatCid[seat] before the search would make
-   // the loop find this seat itself and never move a guest whose live
-   // seat is a higher number than the stale one.
-   var claimed=-1;
-   for(var s2=1;s2<menuN;s2++){if(seatCid[s2]===hcid){claimed=s2;break;}}
-   if(claimed>=0&&claimed!==seat){
-    // The entry at `claimed`, if any, can only be this same device's old
-    // conn (cids are unique per device), so it is safe to drop it.
-    var cur=null;
-    for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){cur=conns[i].conn;break;}}
-    if(cur){
-     for(var k=conns.length-1;k>=0;k--){if(conns[k].seat===claimed){conns.splice(k,1);}}
-     for(var m=0;m<conns.length;m++){if(conns[m].conn===cur){conns[m].seat=claimed;break;}}
-     pendingNames[claimed]=pendingNames[seat];delete pendingNames[seat];
-     delete seatCid[seat];
-     try{cur.send({type:"welcome",seat:claimed,n:menuN});}catch(e){}
-     renderLobby();broadcastLobby();updateStart();
-     seat=claimed;
-    }
-   }
-   if(!seatCid[seat]){seatCid[seat]=hcid;}
-  }
-  // Migration reclaim by NAME: the new host never saw this device's cid,
-  // so a reconnecting guest (or the original host) is matched by the name
-  // it already had in the room. Only on a migrated host, and only to a
-  // seat no live conn holds — a name is not a unique key, so never evict
-  // a live player. The seat given at connect time stays the fallback.
-  if(migratedHost&&seatCid[seat]!==hcid){
-   var nm2=sanitizeName(msg.name||"");
-   var target=-1;
-   if(nm2){
-    for(var s3=0;s3<menuN;s3++){
-     if(s3===seat){continue;}
-     if(knownNames[s3]!==nm2){continue;}
-     var held=false;
-     for(var q=0;q<conns.length;q++){if(conns[q].seat===s3){held=true;break;}}
-     if(!held){target=s3;break;}
-    }
-   }
-   if(target>=0){
-    var cur2=null;
-    for(var i2=0;i2<conns.length;i2++){if(conns[i2].seat===seat){cur2=conns[i2].conn;break;}}
-    if(cur2){
-     for(var k2=conns.length-1;k2>=0;k2--){if(conns[k2].seat===target){conns.splice(k2,1);}}
-     for(var m2=0;m2<conns.length;m2++){if(conns[m2].conn===cur2){conns[m2].seat=target;break;}}
-     pendingNames[target]=pendingNames[seat];delete pendingNames[seat];
-     delete seatCid[seat];
-     try{cur2.send({type:"welcome",seat:target,n:menuN});}catch(e){}
-     renderLobby();broadcastLobby();updateStart();
-     seat=target;
-     if(hcid){seatCid[seat]=hcid;}
-    }
-   }
-  }
-  if(state){
-   var c=null;
-   for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){c=conns[i].conn;break;}}
-   if(c){try{c.send({type:"state",state:serialState()});}catch(e){}}
-  }
-  return;
- }
- if(msg&&msg.type==="bye"){onGuestLeft(seat);return;}
- if(!state||state.mode!=="online"||!isHost){return;}
- if(msg.type==="roll"&&seat===state.turn){netAct=true;rollDice();netAct=false;}
- if(msg.type==="move"&&seat===state.turn&&state.phase==="move"){
-  var ok=state.movable.some(function(m){return m.p===msg.p&&m.t===msg.t;});
-  if(ok){netAct=true;applyMove(msg.p,msg.t);netAct=false;}
- }
-}
-function onGuestConnClosed(connObj,seat){
- // Remove ONLY the entry for this exact conn: a late close from an old
- // (replaced) conn must never evict the new conn holding the seat.
- var idx=-1;
- for(var i=0;i<conns.length;i++){if(conns[i].conn===connObj){idx=i;break;}}
- if(idx<0){return;}
- conns.splice(idx,1);
- var still=false;
- for(var j=0;j<conns.length;j++){if(conns[j].seat===seat){still=true;break;}}
- if(!still){delete pendingNames[seat];}
- renderLobby();
- broadcastLobby();
- if(!state){updateStart();return;}
- // Seat is kept: a dropped guest can rejoin and keep playing (tokens stay).
- // Their turn is forfeited now; later turns are forfeited by the 30s host timer.
- if(state.turn===seat){nextTurn();return;}
- renderAll();broadcast();
- updateStart();
-}
-function onGuestLeft(seat){
- // Explicit leave ("bye"): the seat is out of the game for good.
- var c=null;
- for(var i=0;i<conns.length;i++){if(conns[i].seat===seat){c=conns[i].conn;break;}}
- onGuestConnClosed(c,seat);
- delete seatCid[seat];
- delete pendingNames[seat];
- if(!state){return;}
- state.left[seat]=true;
- state.players[seat].steps=[-2,-2,-2,-2];
- renderAll();broadcast();
- updateStart();
-}
+
+
+
+
+
+
 function joinRoom(){
  var btn=$("joinBtn");
  // Double/triple taps are normal: while a join is in flight, ignore every
  // further tap. The button stays disabled on "Joining…" until the welcome
  // arrives (or the join fails), so a 2nd tap can never start a second join.
  if(joining){return;}
- clearJoinRetry();
- joinRetryDeadline=Date.now()+30000; // ~30s retry window for peer-unavailable
+ clearJoinTimers();
  var code=($("roomInput").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
  if(code.length!==6){setRoomStatus("Enter the 6-letter room code.");return;}
- destroyPeer();
- cancelStaleRestore();
- roomRole=null;peerDown=false;hostLeftSeen=false;
+ closeWsExpect();
+ roomRole=null; restoring=false;
  joining=true;
  $("roomCode").textContent="";
  setRoomStatus("");
@@ -2315,206 +1860,18 @@ function joinRoom(){
  try{localStorage.setItem("ludoLastName",myName);}catch(e){}
  roomCode=code;
  if(btn){btn.disabled=true;btn.textContent="Joining…";}
- setRoomStatus("Joining…");
+ setRoomStatus("Connecting to the server… first join after a while can take up to a minute.");
  // Hard deadline: no join path may strand the button on "Joining…" — if no
- // seat (welcome) arrived, fail loudly so the user can retry. 60s = the
- // 30s retry window plus the 30s connection window of the last attempt.
+ // seat (welcome) arrived, fail loudly so the user can retry.
  if(joinWatchdog){clearTimeout(joinWatchdog);}
  joinWatchdog=setTimeout(function(){
   joinWatchdog=null;
   if(mySeat<0){failJoin("Could not join — tap Join again.");}
- },60000); // must stay longer than the 30s connTimer above
- ensurePeer(function(ok){
-  if(!ok){
-   joining=false;
-   if(joinWatchdog){clearTimeout(joinWatchdog);joinWatchdog=null;}
-   resetJoinBtn();
-   setRoomStatus("Could not reach the game server — check your internet and tap Create again.");
-   updateStart();
-   return;
-  }
-  setRoomStatus("Joining…");
-  tryJoin(code,{});
- });
+ },60000);
+ connectSrv({kind:"join",code:code,name:myName});
 }
-function cancelStaleRestore(){
- // A restore loop left over from a previous room (page-load restore, or a
- // retry timer still pending) shares the same peer/timer globals as a fresh
- // Create/Join. If its retry fires mid-join it destroyPeer()s the new join
- // and wipes its timers. Kill it before starting anything new.
- if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
- reconnecting=false; reconnectTries=0;
- killTakeover();
-}
-function tryJoin(code,opts){
- opts=opts||{};
- var btn=$("joinBtn");
- var joined=false;
- var failed=false;
- peer=new Peer(PEER_CONFIG);
- peerOpenTimer=setTimeout(function(){
-  peerOpenTimer=null;
-  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
-  failJoin("Could not reach the game server — check your internet and tap Create again.");
- },20000);
- function failJoin(msg){
-  if(failed){return;}
-  failed=true;
-  joining=false;
-  clearJoinRetry();
-  reconnecting=false; reconnectTries=0;
-  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
-  roomRole=null;
-  destroyPeer();
-  clearRoomSession();
-  resetJoinBtn();
-  setRoomStatus(msg);
-  $("lobby").classList.add("hidden");
-  updateStart();
- }
- function dropRestorePeer(){
-  clearRoomTimers();
-  var p=peer;peer=null;
-  if(p){try{p.destroy();}catch(e){}}
- }
- // Retry while the host's id is temporarily unregistered (its broker
- // socket died mid-reconnect, and its own re-register takes 10-30s): one
- // fresh attempt every ~5s for up to ~30s total, then fail exactly as
- // before ("Can't find the host — check the host's internet and tap Join
- // again."). The connect failure may surface on the Peer AND on the
- // DataConnection — this helper dedupes, so the first error claims the
- // retry, the second only waits for it, and a failure past the window
- // finally fails the join.
- function tryPeerUnavailable(){
-  if(joinRetryState===1){return "pending";}
-  if(joinRetryState===2){return "exhausted";}
-  if(!joinRetryDeadline||Date.now()>=joinRetryDeadline){joinRetryState=2;return "exhausted";}
-  joinRetryState=1;
-  dropRestorePeer();
-  setRoomStatus("Can't find the host right now — trying again…");
-  joinRetryTimer=setTimeout(function(){
-   joinRetryTimer=null;
-   if(failed){return;}
-   if(!joinRetryDeadline||Date.now()>=joinRetryDeadline){
-    joinRetryState=2;
-    failJoin("Can't find the host — check the host's internet and tap Join again.");
-    return;
-   }
-   joinRetryState=0;
-   tryJoin(code,opts);
-  },5000);
-  return "started";
- }
- peer.on("error",function(err){
-  var type=err&&err.type;
-  if(roomRole==="host"){return;} // took over since: stale guest peer, ignore
-  if(joined){onHostDown();return;}
-  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
-  if(type==="peer-unavailable"){
-   if(tryPeerUnavailable()!=="exhausted"){return;}
-   failJoin("Can't find the host — check the host's internet and tap Join again.");
-  }else{
-   failJoin("Could not reach the game server — check your internet and tap Create again.");
-  }
- });
- peer.on("disconnected",function(){
-  if(roomRole==="host"){return;} // took over since: stale guest peer, ignore
-  if(joined){onHostDown();return;}
-  if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
-  failJoin("Connection lost — tap Create again.");
- });
- peer.on("open",function(){
-  clearRoomTimers();
-  hostConn=peer.connect("ludo-"+code,{metadata:{cid:CLIENT_ID,name:myName}});
-  connTimer=setTimeout(function(){
-   connTimer=null;
-   if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
-   failJoin("Could not find that room — the host may have left. Check the code and try again.");
-  },30000); // 30s: TURN allocation on a slow mobile network can take a while;
-  // the old 15s timer killed joins that would have succeeded.
-  hostConn.on("data",function(msg){
-   // Took over since this conn was made: messages from the old host are
-   // stale — never let them overwrite the state I now serve.
-   if(roomRole==="host"){return;}
-   lastHostMsg=Date.now();
-   if(msg.type==="ping"){try{hostConn.send({type:"pong"});}catch(e){}return;}
-   if(msg.type==="welcome"){
-    if(welcomeTimer){clearTimeout(welcomeTimer);welcomeTimer=null;}
-    joining=false;
-    killTakeover(); // a host answered: no takeover is needed any more
-    // A reconnect retry (2s, from the joining guard) may be pending:
-    // the join is done, so cancel it — otherwise it would fire later and
-    // pointlessly restore a room that is already joined.
-    if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
-    clearJoinRetry(); // join done: no retry or watchdog may fire later
-    reconnecting=false; reconnectTries=0;
-    resetJoinBtn();
-    mySeat=msg.seat;myLastSeat=mySeat;menuN=msg.n;updateStart();renderLobby();
-    if(reconnecting){reconnectDone();}
-   }
-   if(msg.type==="room-full"){
-    if(welcomeTimer){clearTimeout(welcomeTimer);welcomeTimer=null;}
-    if(opts.restore){
-     dropRestorePeer();
-     setLobbyStatus("Room is full — all seats are taken.");
-     if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
-     return;
-    }
-    failJoin("Room is full — all seats are taken.");
-    return;
-   }
-   if(msg.type==="state"){applyNetState(msg.state);}
-   if(msg.type==="lobby"){guestLobby=msg.players||[];renderLobby();}
-   if(msg.type==="host-left"){hostLeftSeen=true;clearRoomSession();roomRole=null;setLobbyStatus("Host left the room");}
-  });
-  hostConn.on("open",function(){
-   if(roomRole==="host"){return;} // took over since: stale guest conn, ignore
-   if(failed){return;}
-   joined=true;
-   clearRoomTimers();
-   startGuestWatchdog();
-   roomRole="guest";
-   // NOTE: the Join button stays disabled on "Joining…" here on purpose.
-   // The join is NOT done until the host's welcome arrives (mySeat set).
-   // Re-enabling the button now lets a 2nd tap start a second join that
-   // destroyPeer()s this one mid-flight — that is the double-tap bug.
-   $("joinBtn").classList.add("sel");
-   setRoomStatus("Joined room");
-   saveRoomSession();
-   if(!state&&$("lobby").classList.contains("hidden")){showLobby();}
-   try{hostConn.send({type:"hello",name:myName,cid:CLIENT_ID});}catch(e){}
-   welcomeTimer=setTimeout(function(){
-    welcomeTimer=null;
-    if(mySeat>=0){return;}
-    if(opts.restore){
-     dropRestorePeer();
-     setLobbyStatus("Could not rejoin the room — tap Reconnect.");
-     if($("reconnectBtn")){$("reconnectBtn").classList.remove("hidden");}
-     if(opts.onFail){opts.onFail();}
-     return;
-    }
-    failJoin("Could not join — check the code and tap Join again.");
-   },10000);
-  });
-  hostConn.on("error",function(){
-   if(roomRole==="host"){return;} // took over since: stale guest conn, ignore
-   if(joined){onHostDown();return;}
-   if(opts.restore){if(opts.onFail){opts.onFail();}return;}
-   // Connect failure before open = the host's id is not reachable right now;
-   // same one-retry window as the peer-unavailable path, same message.
-   if(tryPeerUnavailable()!=="exhausted"){return;}
-   failJoin("Can't find the host — check the host's internet and tap Join again.");
-  });
-  hostConn.on("close",function(){
-   if(roomRole==="host"){return;} // took over since: stale guest conn, ignore
-   if(reconnecting){return;}
-   if(peerDown){return;}
-   if(hostLeftSeen){if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}return;}
-   if(roomRole==="guest"){onHostDown();return;}
-   if(!$("lobby").classList.contains("hidden")){setLobbyStatus("Host left the room");}
-  });
- });
-}
+
+
 document.querySelectorAll("#countPills .pill").forEach(function(b){
  b.addEventListener("click",function(){
   document.querySelectorAll("#countPills .pill").forEach(function(x){x.classList.remove("sel");});
@@ -2560,29 +1917,25 @@ $("shareRoomBtn").addEventListener("click",function(){
 $("leaveRoomBtn").addEventListener("click",leaveRoom);
 $("reconnectBtn").addEventListener("click",function(){
  if(!roomRole){return;}
- reconnecting=true; reconnectTries=0;
- if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
  if($("reconnectBtn")){$("reconnectBtn").classList.add("hidden");}
  setLobbyStatus("Reconnecting…");
- attemptReconnect();
- if(roomRole==="guest"){maybeTakeover();}
+ startRestore();
 });
 document.addEventListener("visibilitychange",function(){
  if(document.hidden){return;}
  if(!roomRole){return;}
  if($("lobby").classList.contains("hidden")&&$("game").classList.contains("hidden")){return;}
- // A reconnect stuck with no timer and no recent attempt cannot be in
- // flight — restart it instead of leaving the room dead.
- if(reconnectStuck()){attemptReconnect();return;}
- // Host: verify the broker registration is really alive — a phone that
- // slept can leave a zombie peer (socket dead, peer.disconnected false).
- if(roomRole==="host"){checkHostLiveness();}
- else if(!reconnecting&&(!peer||peer.disconnected)){scheduleReconnect();}
+ // The tab came back: if the socket is gone (a slept phone's socket is
+ // dropped by the server after 45s of silence), reconnect and re-hello
+ // to reclaim the seat. An open socket needs nothing.
+ if(!ws||ws.readyState!==1){
+  if(!restoring&&!wsRetryTimer){startRestore();}
+ }
 });
 // Network returning is the same high-risk moment for a host.
 if(typeof window.addEventListener==="function"){
  window.addEventListener("online",function(){
-  if(roomRole==="host"){checkHostLiveness();}
+  if(roomRole&&(!ws||ws.readyState!==1)&&!restoring&&!wsRetryTimer){startRestore();}
  });
 }
 $("startBtn").addEventListener("click",function(){
@@ -2601,7 +1954,7 @@ $("muteBtn").addEventListener("click",function(){
  if(!muted){beep(700,0.06);}
 });
 function startWith(n){
- menuN=n;menuMode="together";isHost=false;mySeat=-1;myLastSeat=-1;roomRole=null;
+ menuN=n;menuMode="together";isHost=false;mySeat=-1;roomRole=null;
  startGame();
 }
 $("diceBox").innerHTML=diceFaceSVG(6);
@@ -2632,14 +1985,15 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  if(m){
   var code=m[1].toUpperCase();
   // This device already has a session for THIS room: reconnect to it
-  // (keeps the guest's seat, or re-creates the host's room) instead of
-  // starting a fresh join.
+  // (re-hello with the saved code + cid, reclaiming the same seat)
+  // instead of starting a fresh join.
   var saved=readRoomSession();
   if(saved&&saved.code&&saved.code.toUpperCase()===code){restoreSavedRoom(saved);return;}
   // Invite link: go straight into the room — no Join tap needed. The
   // saved name is already filled in by renderNameInputs(); the join runs
   // through the same guarded path as a manual tap (double-tap guard,
-  // 60s watchdog, ~30s peer-unavailable retry window), and if it
+  // 60s watchdog; a wrong code fails fast with "Room not found", and
+  // only a dropped connection retries with backoff), and if it
   // ultimately fails the setup screen stays up with Join available for
   // a manual retry.
   goSetup(4,"online");
@@ -2650,7 +2004,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get myLastSeat(){return myLastSeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,inviteLink:inviteLink,saveRoomSession:saveRoomSession,hmacSha1B64:hmacSha1B64,turnCreds:turnCreds,sha1Bytes:sha1Bytes,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone,checkHostLiveness:checkHostLiveness,probeHostLiveness:probeHostLiveness,joinAsGuestNow:joinAsGuestNow,onHostDown:onHostDown,maybeTakeover:maybeTakeover,tryTakeover:tryTakeover,becomeHost:becomeHost,presentGuestSeats:presentGuestSeats,get isHost(){return isHost;},get migratedHost(){return migratedHost;},get takeoverInFlight(){return takeoverInFlight;},get hostUnavailableCount(){return hostUnavailableCount;}};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin};
 })();
 </script>
 </body>
