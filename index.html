@@ -1329,19 +1329,91 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 25s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="515";
+var APP_VERSION="516";
+// --- TURN relays (V5.16) ---
+// V5.15 used the widely copied openrelayproject/openrelayproject login at
+// openrelay.metered.ca — that fixed pair is STALE: Metered no longer grants
+// allocations with it (it now wants signup + API key). Real phones still
+// failed after V5.15 for exactly this reason. The no-signup method that
+// Metered still documents is staticauth.openrelay.metered.ca with a
+// TIME-LIMITED credential: username "<expiry>:<label>", credential =
+// base64(HMAC-SHA1(shared secret, username)). The secret below is the one
+// Metered publishes on its own docs page (openrelayprojectsecret), so no
+// account is needed — the page computes a fresh 24h credential on load.
+// A second, independent relay is included too (AnyFirewall demo,
+// webrtc/webrtc over TCP 443), so one dead relay no longer kills every
+// join. ICE tries all servers; whichever allocates first wins.
+// Pure-JS SHA-1 + HMAC-SHA1 (synchronous, no library, cross-checked in
+// tests against Node's crypto). Short inputs only (usernames ~20 chars).
+function sha1Bytes(msgBytes){
+ var bytes=msgBytes.slice();
+ var ml=bytes.length;
+ bytes.push(0x80);
+ while(bytes.length%64!==56)bytes.push(0);
+ var bitLen=ml*8;
+ // NOTE: (bitLen>>>(i*8)) is WRONG here — JS shifts wrap mod 32, so >>>32
+ // equals >>>0 and the length byte lands twice. Division is correct.
+ for(var i=7;i>=0;i--)bytes.push((Math.floor(bitLen/Math.pow(2,i*8)))&0xff);
+ function rol(n,b){return ((n<<b)|(n>>>(32-b)))|0;}
+ var h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0;
+ for(var o=0;o<bytes.length;o+=64){
+  var w=[];
+  for(var t=0;t<16;t++)w[t]=((bytes[o+t*4]<<24)|(bytes[o+t*4+1]<<16)|(bytes[o+t*4+2]<<8)|bytes[o+t*4+3])|0;
+  for(var t2=16;t2<80;t2++)w[t2]=rol(w[t2-3]^w[t2-8]^w[t2-14]^w[t2-16],1);
+  var a=h0,b=h1,c=h2,d=h3,e=h4;
+  for(var t3=0;t3<80;t3++){
+   var f,k;
+   if(t3<20){f=(b&c)|((~b)&d);k=0x5A827999;}
+   else if(t3<40){f=b^c^d;k=0x6ED9EBA1;}
+   else if(t3<60){f=(b&c)|(b&d)|(c&d);k=0x8F1BBCDC;}
+   else{f=b^c^d;k=0xCA62C1D6;}
+   var tmp=(rol(a,5)+f+e+k+w[t3])|0;
+   e=d;d=c;c=rol(b,30);b=a;a=tmp;
+  }
+  h0=(h0+a)|0;h1=(h1+b)|0;h2=(h2+c)|0;h3=(h3+d)|0;h4=(h4+e)|0;
+ }
+ var out=[];
+ [h0,h1,h2,h3,h4].forEach(function(h){out.push((h>>>24)&255,(h>>>16)&255,(h>>>8)&255,h&255);});
+ return out;
+}
+function strBytes(s){
+ var utf8=unescape(encodeURIComponent(s));
+ var out=[];for(var i=0;i<utf8.length;i++)out.push(utf8.charCodeAt(i)&0xff);
+ return out;
+}
+function b64Encode(bytes){
+ var chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+ var out="";
+ for(var i=0;i<bytes.length;i+=3){
+  var n=(bytes[i]<<16)|((bytes[i+1]||0)<<8)|(bytes[i+2]||0);
+  out+=chars[(n>>18)&63]+chars[(n>>12)&63]+(i+1<bytes.length?chars[(n>>6)&63]:"=")+(i+2<bytes.length?chars[n&63]:"=");
+ }
+ return out;
+}
+function hmacSha1B64(key,msg){
+ var kb=strBytes(key);
+ if(kb.length>64)kb=sha1Bytes(kb);
+ while(kb.length<64)kb.push(0);
+ var ipad=[],opad=[];
+ for(var i=0;i<64;i++){ipad.push(kb[i]^0x36);opad.push(kb[i]^0x5c);}
+ return b64Encode(sha1Bytes(opad.concat(sha1Bytes(ipad.concat(strBytes(msg))))));
+}
+function turnCreds(){
+ var exp=Math.floor(Date.now()/1000)+86400; // valid 24h
+ var user=exp+":ludo";
+ return {username:user,credential:hmacSha1B64("openrelayprojectsecret",user)};
+}
+var TURN_CREDS=turnCreds();
 // PeerJS connection config. STUN alone is not enough: when two phones sit
 // behind symmetric NAT (common on mobile data), a direct P2P connection
-// never opens and the guest's join dies silently after 15s ("Could not find
-// that room" while the host is alive). A TURN relay gives those pairs a
-// path. openrelay.metered.ca is the Open Relay Project's public demo TURN
-// (no signup); if it ever gets slow, swap in a private TURN (e.g. Metered
-// free tier with your own key) here — one place fixes every peer.
+// never opens and the guest's join dies silently ("Could not find that
+// room" while the host is alive). A TURN relay gives those pairs a path.
 var PEER_CONFIG={config:{iceServers:[
  {urls:"stun:stun.l.google.com:19302"},
- {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
- {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
- {urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}
+ {urls:"turn:turn.anyfirewall.com:443?transport=tcp",username:"webrtc",credential:"webrtc"},
+ {urls:"turn:staticauth.openrelay.metered.ca:80",username:TURN_CREDS.username,credential:TURN_CREDS.credential},
+ {urls:"turn:staticauth.openrelay.metered.ca:443",username:TURN_CREDS.username,credential:TURN_CREDS.credential},
+ {urls:"turn:staticauth.openrelay.metered.ca:443?transport=tcp",username:TURN_CREDS.username,credential:TURN_CREDS.credential}
 ]}};
 function inviteLink(){return (location.origin&&location.origin!=="null"?location.origin:"")+location.pathname+"?room="+roomCode+"&v="+APP_VERSION;}
 function leaveRoom(){
@@ -1774,7 +1846,7 @@ function joinRoom(){
  joinWatchdog=setTimeout(function(){
   joinWatchdog=null;
   if(mySeat<0){failJoin("Join holo na — abar Join chap dao.");}
- },25000);
+ },45000); // must stay longer than the 30s connTimer above
  ensurePeer(function(ok){
   if(!ok){
    joining=false;
@@ -1870,7 +1942,8 @@ function tryJoin(code,opts){
    connTimer=null;
    if(opts.restore){dropRestorePeer();if(opts.onFail){opts.onFail();}return;}
    failJoin("Could not find that room — the host may have left. Check the code and try again.");
-  },15000);
+  },30000); // 30s: TURN allocation on a slow mobile network can take a while;
+  // the old 15s timer killed joins that would have succeeded.
   hostConn.on("data",function(msg){
    lastHostMsg=Date.now();
    if(msg.type==="ping"){try{hostConn.send({type:"pong"});}catch(e){}return;}
@@ -2064,7 +2137,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get clientId(){return CLIENT_ID;},get seatCid(){return seatCid;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,lobbyPlayers:lobbyPlayers,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get peer(){return peer;},rollFairDie:rollFairDie,onGuestMsg:onGuestMsg,inviteLink:inviteLink,saveRoomSession:saveRoomSession,hmacSha1B64:hmacSha1B64,turnCreds:turnCreds,sha1Bytes:sha1Bytes,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,scheduleReconnect:scheduleReconnect,attemptReconnect:attemptReconnect,reconnectDone:reconnectDone};
 })();
 </script>
 </body>
