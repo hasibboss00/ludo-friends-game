@@ -51,6 +51,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #lobbyGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .lslot{border-radius:18px;padding:14px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:7px;min-height:132px;justify-content:center;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05)}
 .lslot.empty{border:2px dashed rgba(255,255,255,.28);background:rgba(255,255,255,.03)}
+.lslot.just-joined{animation:joinFlash .9s ease}
+@keyframes joinFlash{0%{box-shadow:0 0 0 0 rgba(245,197,66,.9)}100%{box-shadow:0 0 0 16px rgba(245,197,66,0)}}
 .lav{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;font-size:24px;font-weight:900;color:#fff;position:relative;box-shadow:inset -2px -3px 5px rgba(0,0,0,.3),inset 2px 3px 5px rgba(255,255,255,.35)}
 .crownBadge{position:absolute;top:-9px;right:-5px;font-size:18px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
 .lname{font-size:16px;font-weight:800;line-height:1.1}
@@ -72,7 +74,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .mini.sel{background:linear-gradient(135deg,#7B2FF7,#A855F7);border-color:#C084FC}
 #game{width:100%}
 #topRow{display:flex;gap:10px;justify-content:space-between;margin:2px 0 10px;align-items:center}
-#gameBackBtn,#setBtn{width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);color:#F5C542;font-size:22px;font-weight:900;cursor:pointer;display:grid;place-items:center;padding:0;line-height:1;box-shadow:0 4px 10px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+#gameBackBtn,#setBtn,#chatBtn{width:44px;height:44px;flex:0 0 44px;border-radius:13px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);color:#F5C542;font-size:22px;font-weight:900;cursor:pointer;display:grid;place-items:center;padding:0;line-height:1;box-shadow:0 4px 10px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
 #setBtn svg{width:22px;height:22px;display:block}
 .matchPill{flex:1;justify-content:center;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:10px 18px;font-weight:800;font-size:15px;backdrop-filter:blur(8px)}
 .matchPill .ico{color:#C084FC}
@@ -86,7 +88,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .pcard .on i{width:8px;height:8px;border-radius:50%;background:#22C55E;display:inline-block}
 .pcard .on.left{color:#F87171}
 .pcard .on.left i{background:#EF4444}
-.pcard.active{transform:scale(1.03)}
+.pcard.active{transform:scale(1.03);animation:cardPulse 1.6s ease-in-out infinite}
+@keyframes cardPulse{0%,100%{box-shadow:0 0 14px rgba(245,197,66,.35)}50%{box-shadow:0 0 26px rgba(245,197,66,.75)}}
+.pcard.left{opacity:.55}
 /* The row of player cards above the board on mobile: compact, so the
    board gets the screen. (Desktop keeps the roomy side cards.) */
 #chipRow .pcard{padding:8px 10px;gap:8px;min-width:0;flex:1 1 auto;max-width:190px}
@@ -95,6 +99,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #chipRow .pcard .on{font-size:11px;margin-top:2px}
 #boardCol{width:100%;max-width:560px;display:flex;flex-direction:column;align-items:center;gap:14px}
 #boardWrap{width:100%;border-radius:20px;padding:9px;background:linear-gradient(145deg,#F9E08A 0%,#E9BE3C 25%,#A87B14 50%,#F5C542 72%,#8A6D1B 100%);box-shadow:0 30px 60px rgba(0,0,0,.6),0 8px 18px rgba(0,0,0,.55),inset 0 2px 0 rgba(255,255,255,.75),inset 0 -2px 0 rgba(90,60,0,.5),inset 0 0 0 1px rgba(90,60,0,.45)}
+#boardWrap.board-in{animation:boardIn .5s ease}
+@keyframes boardIn{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
 #board{position:relative;width:100%;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background-color:#FBF7EC;background-image:radial-gradient(120% 120% at 50% 28%,#FFFDF6 0%,rgba(255,253,246,0) 55%),repeating-linear-gradient(118deg,rgba(178,158,108,.08) 0 2px,rgba(178,158,108,0) 2px 11px),repeating-linear-gradient(28deg,rgba(178,158,108,.06) 0 1px,rgba(178,158,108,0) 1px 13px);box-shadow:inset 0 0 0 1px rgba(120,95,40,.18),inset 0 2px 10px rgba(120,95,40,.12),inset 0 0 26px rgba(120,95,40,.16)}
 #cells{position:absolute;inset:0;display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr)}
 .cell{border:1px solid #D8CFB2;background:linear-gradient(145deg,#FFFDF7 0%,#F7F0DC 100%);position:relative;box-shadow:inset 0 1px 0 rgba(255,255,255,.85),inset 0 -2px 3px rgba(0,0,0,.10)}
@@ -102,6 +108,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .cell.centerCell{background:transparent;border-color:transparent}
 .cell .star{position:absolute;inset:0;display:grid;place-items:center;font-size:clamp(9px,2.4vw,17px)}
 .cell .arr{position:absolute;inset:0;display:grid;place-items:center;font-weight:900;font-size:clamp(10px,2.6vw,18px)}
+.cell .laneChev{position:absolute;inset:0;display:grid;place-items:center;font-size:clamp(7px,1.8vw,12px);opacity:.55}
 .yard{position:absolute;width:40%;height:40%;border-radius:14px;display:grid;place-items:center;border:2px solid rgba(255,255,255,.20);box-shadow:inset 0 3px 4px rgba(255,255,255,.55),inset 0 -6px 12px rgba(0,0,0,.32),inset 0 0 0 2px rgba(255,255,255,.22),0 10px 22px rgba(0,0,0,.45)}
 .yard .inner{width:78%;height:78%;background:linear-gradient(145deg,#FFFDF5,#F2EBD6);border-radius:12px;position:relative;box-shadow:0 8px 16px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.85),inset 0 -2px 5px rgba(0,0,0,.14),inset 0 2px 7px rgba(0,0,0,.18)}
 .yard.neutral{background:linear-gradient(145deg,#2E2658,#1B1533);box-shadow:inset 0 3px 4px rgba(255,255,255,.10),inset 0 -5px 10px rgba(0,0,0,.35),inset 0 0 0 2px rgba(255,255,255,.06),0 10px 22px rgba(0,0,0,.45)}
@@ -123,6 +130,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #setPanel input[type=range]{width:150px;accent-color:#F5C542}
 #muteToggle{padding:8px 16px;border-radius:11px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#E7DEF5;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
 #muteToggle.sel{background:linear-gradient(135deg,#F5C542,#E9BE3C);color:#241505;border-color:#F5C542}
+/* In-game chat (V5.31): a compact bottom sheet over the game view. It never
+   covers the board permanently — it opens on demand and closes cleanly. */
+#chatBtn{position:relative}
+#chatBadge{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;border-radius:999px;background:#FF3B30;color:#fff;font-size:11px;font-weight:900;display:grid;place-items:center;padding:0 4px;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+#chatPanel{position:fixed;left:0;right:0;bottom:0;z-index:65;display:flex;justify-content:center;padding:0 10px 10px;pointer-events:none}
+#chatCard{pointer-events:auto;width:min(480px,100%);max-height:46vh;display:flex;flex-direction:column;background:linear-gradient(160deg,rgba(46,24,84,.98),rgba(24,10,46,.98));border:1px solid rgba(192,132,252,.5);border-radius:18px 18px 14px 14px;box-shadow:0 -12px 40px rgba(0,0,0,.6);overflow:hidden}
+#chatHead{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:15px;font-weight:900;border-bottom:1px solid rgba(255,255,255,.1)}
+#chatHead .chatTitle{flex:1}
+#chatMutedNote{font-size:11px;font-weight:700;color:#FBBF24;cursor:pointer}
+#chatClose{width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;font-size:13px;cursor:pointer;font-family:inherit}
+#chatList{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-height:90px}
+.chatMsg{display:flex;gap:8px;align-items:flex-start;max-width:100%}
+.chatAv{width:30px;height:30px;min-width:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:900;color:#fff;cursor:pointer;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.35)}
+.chatBody{min-width:0;flex:1}
+.chatMeta{display:flex;gap:6px;align-items:baseline}
+.chatName{font-size:12px;font-weight:800}
+.chatTime{font-size:11px;color:#9B8BD0}
+.chatText{font-size:14px;line-height:1.4;word-break:break-word;color:#F2EDFF}
+.chatFlag{border:0;background:none;color:#9B8BD0;font-size:13px;cursor:pointer;padding:2px 4px;font-family:inherit}
+.chatFlag:hover{color:#F87171}
+.chatMutedRow{font-size:12px;color:#9B8BD0;font-style:italic;cursor:pointer;padding:2px 0}
+#chatNew{align-self:center;margin:0 0 6px;padding:5px 12px;border-radius:999px;border:0;background:#F5C542;color:#241505;font-size:12px;font-weight:900;cursor:pointer;font-family:inherit}
+#chatQuick{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+.chatChip{padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#E7DEF5;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.chatChip:active{background:rgba(245,197,66,.35)}
+#chatInputRow{display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,.1)}
+#chatInput{flex:1;min-width:0;height:44px;border-radius:12px;border:2px solid rgba(168,85,247,.5);background:rgba(255,255,255,.06);color:#fff;font-size:15px;padding:0 12px;outline:none;font-family:inherit}
+#chatInput:focus{border-color:#C084FC}
+#chatSend{padding:0 18px;border:0;border-radius:12px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+#chatEmpty{color:#9B8BD0;font-size:13px;text-align:center;padding:14px 0}
 #app.q-low .matchPill{backdrop-filter:none}
 #app.q-low #boardWrap{box-shadow:0 10px 22px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.55)}
 #app.q-low #board{box-shadow:none}
@@ -143,6 +180,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 .pawn.cap-jump{transition:none!important}
 .pawn.cap-grow svg{animation:capGrow .4s cubic-bezier(.34,1.56,.64,1)}
 @keyframes capGrow{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+/* V5.31 pawn life: a pawn leaving its yard hops out, a tapped pawn gives a
+   small scale nod before it moves, a pawn reaching home bounces once. */
+.pawn.yard-hop svg{animation:yardHop .32s cubic-bezier(.34,1.56,.64,1)}
+@keyframes yardHop{0%{transform:translateY(0) scale(.7)}55%{transform:translateY(-9px) scale(1.12)}100%{transform:translateY(0) scale(1)}}
+.pawn.tap-pick svg{transform:scale(1.18);transition:transform .12s ease}
+.pawn.home-bounce svg{animation:homeBounce .5s cubic-bezier(.34,1.56,.64,1)}
+@keyframes homeBounce{0%{transform:translateY(0) scale(1)}35%{transform:translateY(-10px) scale(1.15)}70%{transform:translateY(0) scale(.96)}100%{transform:translateY(0) scale(1)}}
 .cap-glow{position:absolute;width:11%;aspect-ratio:1/1;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;animation:capGlowFade .3s ease forwards}
 .cap-glow.slow{animation-duration:.5s}
 @keyframes capGlowFade{0%{opacity:0}35%{opacity:.9}100%{opacity:0}}
@@ -151,27 +195,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #controlBar{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;flex-wrap:wrap}
 #turnMsg{min-height:20px;text-align:center;color:#FBBF24;font-size:13px;font-weight:700;margin-top:6px}
 #lastRoll{min-height:22px;text-align:center;color:#fff;font-size:15px;font-weight:800;margin-top:4px}
+/* Toast (V5.31): one small pill, centred above the board, fades in/out.
+   Max one visible; extra toasts queue for 1.6s each. Never blocks play. */
+#toast{position:fixed;left:50%;top:14%;transform:translate(-50%,-8px) scale(.96);z-index:70;background:rgba(24,10,46,.94);border:1px solid rgba(245,197,66,.55);color:#FFE9A8;font-size:14px;font-weight:800;padding:10px 18px;border-radius:999px;box-shadow:0 12px 30px rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;max-width:92vw;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
 .rulesLine{margin-top:14px;text-align:center;color:#B9A8E8;font-size:12.5px;line-height:1.6}
 #turnPill{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 18px;font-weight:800;font-size:16px;backdrop-filter:blur(8px)}
 #turnPill .dot{width:14px;height:14px;border-radius:50%;box-shadow:inset -2px -2px 3px rgba(0,0,0,.3),inset 2px 2px 3px rgba(255,255,255,.5)}
 #diceBox{width:76px;height:76px;border-radius:18px;background:linear-gradient(145deg,#fff,#D9D9EA);box-shadow:0 12px 26px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.9),inset 0 -3px 6px rgba(0,0,0,.14);cursor:pointer;display:grid;place-items:center;border:0;padding:0}
 #diceBox:disabled{opacity:1;cursor:default}
 .diceScene{width:52px;height:52px;perspective:320px}
+.diceScene.land{animation:diceLand .12s ease}
+@keyframes diceLand{0%{transform:translateY(0)}40%{transform:translateY(-5px)}100%{transform:translateY(0)}}
 .diceCube{position:relative;width:52px;height:52px;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.7,.3,1)}
-.dface{position:absolute;inset:0;border:1px solid rgba(0,0,0,.08);border-radius:9px;box-shadow:inset 0 2px 3px rgba(255,255,255,.9),inset 0 -3px 5px rgba(0,0,0,.1);backface-visibility:hidden}
+.dface{position:absolute;inset:0;border:1px solid rgba(0,0,0,.08);border-radius:9px;box-shadow:inset 0 2px 4px rgba(255,255,255,.95),inset 0 -4px 6px rgba(0,0,0,.13),inset 0 0 0 1px rgba(0,0,0,.05);backface-visibility:hidden}
 .dface i{position:absolute;width:9px;height:9px;border-radius:50%;background:#1A1A2E;transform:translate(-50%,-50%);box-shadow:inset 0 1px 2px rgba(255,255,255,.35)}
-.dface.f6{transform:rotateY(0deg) translateZ(26px);background:linear-gradient(145deg,#fff,#EDEDF5)}
-.dface.f1{transform:rotateY(180deg) translateZ(26px);background:linear-gradient(145deg,#E8E8F0,#D5D5E0)}
-.dface.f3{transform:rotateY(90deg) translateZ(26px);background:linear-gradient(145deg,#F2F2F8,#DCDCE6)}
-.dface.f4{transform:rotateY(-90deg) translateZ(26px);background:linear-gradient(145deg,#E2E2EC,#CFCFDB)}
-.dface.f2{transform:rotateX(90deg) translateZ(26px);background:linear-gradient(145deg,#fff,#F0F0F6)}
-.dface.f5{transform:rotateX(-90deg) translateZ(26px);background:linear-gradient(145deg,#D8D8E2,#C4C4D0)}
+.dface.f6{transform:rotateY(0deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.95),rgba(255,255,255,0) 60%),linear-gradient(145deg,#fff,#EDEDF5)}
+.dface.f1{transform:rotateY(180deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%),linear-gradient(145deg,#E8E8F0,#D5D5E0)}
+.dface.f3{transform:rotateY(90deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%),linear-gradient(145deg,#F2F2F8,#DCDCE6)}
+.dface.f4{transform:rotateY(-90deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%),linear-gradient(145deg,#E2E2EC,#CFCFDB)}
+.dface.f2{transform:rotateX(90deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.95),rgba(255,255,255,0) 60%),linear-gradient(145deg,#fff,#F0F0F6)}
+.dface.f5{transform:rotateX(-90deg) translateZ(26px);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%),linear-gradient(145deg,#D8D8E2,#C4C4D0)}
 #rollBtn{padding:17px 26px;border:0;border-radius:16px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:17px;font-weight:900;letter-spacing:1px;cursor:pointer;font-family:inherit;box-shadow:0 12px 26px rgba(123,47,247,.5);display:flex;align-items:center;gap:9px}
 #rollBtn:disabled{opacity:.45;cursor:default;box-shadow:none}
 #muteBtn{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);color:#fff;cursor:pointer;display:grid;place-items:center;padding:0}
 #winOverlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(18,7,31,.6);z-index:6}
+#winOverlay:not(.hidden) #winCard{animation:winIn .45s cubic-bezier(.34,1.56,.64,1)}
+@keyframes winIn{0%{opacity:0;transform:scale(.82) translateY(14px)}100%{opacity:1;transform:scale(1) translateY(0)}}
 #winCard{background:linear-gradient(160deg,#2A1650,#1A0F33);border:1px solid rgba(192,132,252,.6);border-radius:24px;padding:32px 44px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+#winCard.loser{background:linear-gradient(160deg,#2B2B3A,#17171F);border-color:rgba(255,255,255,.22)}
 #winText{font-size:38px;font-weight:900;letter-spacing:2px;background:linear-gradient(90deg,#FFD54F,#FF9A00);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#winCard.loser #winText{background:linear-gradient(90deg,#D8D8E8,#9A9AB0);-webkit-background-clip:text;background-clip:text}
+#winSub{margin-top:10px;font-size:15px;font-weight:700;color:#D8CBF5;min-height:20px}
 #againBtn{margin-top:20px;padding:15px 30px;border:0;border-radius:16px;background:linear-gradient(135deg,#7B2FF7,#C026D3);color:#fff;font-size:17px;font-weight:800;letter-spacing:2px;cursor:pointer;font-family:inherit}
 #confetti{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:5}
 .cf{position:absolute;width:9px;height:15px;top:-22px;border-radius:2px;animation:fallA 1.7s ease-in forwards}
@@ -354,7 +409,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
     </div>
     <button id="backBtn" class="backBtn">&larr; Home</button>
     <button id="startBtn">START</button>
-    <div class="rulesLine">Classic rules &mdash; 6 = extra roll &middot; capture = extra roll &middot; 3 sixes in a row = turn lost &middot; exact roll to finish &middot; &#9733; = safe</div>
+    <div class="rulesLine">Classic rules &mdash; 6 = extra roll &middot; capture = extra roll &middot; consecutive sixes allowed &middot; exact roll to finish &middot; &#9733; = safe</div>
   </div>
 
   <div id="lobby" class="hidden">
@@ -388,7 +443,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
       <button id="gameBackBtn" aria-label="Leave game">&#8592;</button>
       <div class="matchPill"><span class="ico">&#128101;</span><span id="matchLabel">4 Player Match</span></div>
       <button id="setBtn" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button id="chatBtn" aria-label="Match chat">&#128172;<span id="chatBadge" class="hidden">0</span></button>
     </div>
+    <div id="toast" class="hidden"></div>
     <div id="table">
       <div id="cardsLeft"></div>
       <div id="boardCol">
@@ -402,6 +459,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
             <div id="winOverlay" class="hidden">
               <div id="winCard">
                 <div id="winText"></div>
+                <div id="winSub"></div>
                 <button id="againBtn">Play Again</button>
               </div>
             </div>
@@ -432,6 +490,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 <audio id="sndFirst6" src="hello-sulululu_0_7j54.mp3" preload="auto"></audio>
 <audio id="sndKill" src="rag-korla_1_nz6g.mp3" preload="auto"></audio>
 <audio id="sndHome" src="romanceeeeeeeeeeeeee_4_6w2p.mp3" preload="auto"></audio>
+<div id="chatPanel" class="hidden">
+  <div id="chatCard">
+    <div id="chatHead"><span class="chatTitle">Match Chat</span><span id="chatMutedNote"></span><button id="chatClose" aria-label="Close chat">&#10005;</button></div>
+    <div id="chatList"></div>
+    <button id="chatNew" class="hidden">&#8595; New messages</button>
+    <div id="chatQuick"></div>
+    <div id="chatInputRow"><input id="chatInput" maxlength="200" placeholder="Type a message…" autocomplete="off"><button id="chatSend">Send</button></div>
+  </div>
+</div>
 <script>
 (function(){
 "use strict";
@@ -463,22 +530,52 @@ var $=function(id){return document.getElementById(id);};
 var state=null, mySeat=-1, isHost=false, roomCode="", muted=false, audioCtx=null, timerInt=null, timerSec=0, turnTimerInt=null, turnLeft=30, rolling=false;
 // Classic rule set (fixed for every match — never changed silently):
 //  - 6 grants an extra roll; capturing grants an extra roll.
+//  - Consecutive sixes are allowed: there is no three-sixes penalty.
 //  - Reaching home grants NO extra roll.
-//  - 3 sixes in a row forfeits the turn (classic anti-flood rule).
 //  - Exact roll required to enter home (FINISH); overshoot cannot move.
 //  - ★ squares are safe: no capture there. Home columns cannot be captured.
 //  - The ROOM SERVER is the authority in an online game: it alone rolls
 //    the dice and applies moves; every player only sends roll/move requests,
 //    which the server validates (turn, phase, legal move) before applying.
 //    In Together mode this tab is the authority.
-var RULES={extraOnSix:true,extraOnCapture:true,extraOnHome:false,sixForfeit:3,exactFinish:true};
+var RULES={extraOnSix:true,extraOnCapture:true,extraOnHome:false,exactFinish:true};
 var hudMsg="", hudMsgUntil=0;
+// --- Toasts (V5.31) ---
+// One small pill at a time, centred above the board, 1.6s each; extras
+// queue instead of stacking. Short and unobtrusive — capture, extra turn,
+// pawn home, last pawn, join/leave, match start. Never blocks play.
+var toastQueue=[], toastShowing=false, toastTimer=null;
+function showToast(msg,ms){
+ toastQueue.push({msg:msg,ms:ms||1600});
+ if(!toastShowing){nextToast();}
+}
+function nextToast(){
+ var item=toastQueue.shift();
+ var t=$("toast");
+ if(!item||!t){toastShowing=false;return;}
+ toastShowing=true;
+ t.textContent=item.msg;
+ t.classList.remove("hidden"); t.classList.add("show");
+ if(toastTimer){clearTimeout(toastTimer);}
+ toastTimer=setTimeout(function(){
+  t.classList.remove("show"); t.classList.add("hidden");
+  toastShowing=false; toastTimer=null;
+  nextToast();
+ },item.ms);
+}
+// Match-start board entrance (V5.31): a quick scale/fade on the frame.
+function boardInAnim(){
+ var bw=$("boardWrap");
+ if(!bw){return;}
+ bw.classList.remove("board-in");
+ void bw.offsetWidth;
+ bw.classList.add("board-in");
+}
 // Genuine unbiased dice. Every roll is independent: each face has exactly
 // 1/6 probability, from crypto.getRandomValues with rejection sampling
 // (modulo bias removed). NOTHING adjusts the result — no decks, no streak
 // compensation, no per-player balancing, no host favouritism. A streak of
-// 6s is possible, as in real Ludo; the 3-six forfeit rule (above) is the
-// only cap, and it applies to everyone equally.
+// 6s is possible, as in real Ludo, and every 6 grants an extra roll.
 function rollFairDie(){
  var c=(typeof window!=="undefined"&&(window.crypto||window.msCrypto))||null;
  if(c&&c.getRandomValues){
@@ -489,6 +586,7 @@ function rollFairDie(){
  return 1+Math.floor(Math.random()*6); // fallback: still uniform 1/6
 }
 var hostName="", myName="", winHandledFor=null, srvLobby=[];
+var prevLobbySeats=null, justJoinedSeat=-1;
 var roomRole=null, reconnecting=false;
 var joining=false, joinWatchdog=null;
 // --- Room server transport (V5.20): state that is NOT in the state block ---
@@ -683,6 +781,13 @@ function showDice(v,animate){
  diceSpin.x=tx;diceSpin.y=ty;
  cube.style.transition="transform .55s cubic-bezier(.2,.7,.3,1)";
  cube.style.transform="rotateX("+tx+"deg) rotateY("+ty+"deg)";
+ // Landing bounce at settle (~550ms): spin .55s + bounce .12s ≈ .67s total,
+ // inside the 500–800ms target. The bounce is on the scene, not the cube,
+ // so it never disturbs the landed face.
+ setTimeout(function(){
+  var sc=$("diceScene");
+  if(sc){sc.classList.remove("land");void sc.offsetWidth;sc.classList.add("land");}
+ },550);
 }
 function yardAt(r,c){
  if(r<6&&c<6)return 0;
@@ -717,7 +822,11 @@ function buildBoard(){
     var hc=homeAt(r,c);
     var key=r+","+c;
     if(hc>=0){
-     if(active[hc]){d.style.background="linear-gradient(145deg,"+COLORS[hc].light+" 0%,"+COLORS[hc].hex+" 60%)";}
+     if(active[hc]){
+      d.style.background="linear-gradient(145deg,"+COLORS[hc].light+" 0%,"+COLORS[hc].hex+" 60%)";
+      // Home-lane direction: each lane points toward the centre it leads to.
+      d.innerHTML='<span class="laneChev" style="color:'+COLORS[hc].dark+'">'+["\u25B6","\u25BC","\u25C0","\u25B2"][hc]+'</span>';
+     }
      else{d.style.background="#2A2547";d.style.borderColor="#3A3460";}
     }else{
      var ti=-1;
@@ -783,7 +892,7 @@ function cardEl(seat){
  var c=COLORS[ci];
  var leftTxt=state.left[seat];
  var el=document.createElement("div");
- el.className="pcard";
+ el.className="pcard"+(state.turn===seat?" active":"")+(leftTxt?" left":"");
  el.setAttribute("data-seat",String(seat));
  el.style.borderColor=state.turn===seat?c.hex:"rgba(255,255,255,0.14)";
  el.style.boxShadow=state.turn===seat?("0 0 22px "+c.hex+"88"):"none";
@@ -945,16 +1054,28 @@ function renderHud(){
   var winner=-1;
   for(var p=0;p<state.n;p++){if(state.players[p].steps.every(function(x){return x===FINISH;})){winner=p;break;}}
   if(winner>=0){
-   $("winText").textContent=displayName(winner)+" Wins";
+   // Online: "You Win!" for me, "X Wins!" + a subdued card when I lose.
+   // Together: the winning local player's name, always celebrated.
+   var meWon=(state.mode==="online")?(winner===mySeat):false;
+   $("winText").textContent=(state.mode==="online"&&meWon)?"You Win!":displayName(winner)+" Wins";
+   var wc=$("winCard");
+   if(wc){wc.classList.toggle("loser",state.mode==="online"&&!meWon);}
+   var wsub=$("winSub");
+   if(wsub){wsub.textContent=(state.mode==="online"&&!meWon)?"Better luck next time!":"\uD83C\uDFC6 Champion!";}
    $("winOverlay").classList.remove("hidden");
    if(winHandledFor!==state.gameId){
     winHandledFor=state.gameId;
     confetti();
     recordWin(displayName(winner));
+    if(state.mode==="online"){if(meWon){sfx("win");}else{sfx("lose");}}
+    else{sfx("win");}
    }
   }
  }
  $("matchLabel").textContent=state.n+" Player Match";
+ // Chat lives in online matches only: hide the button in Together mode.
+ var cb=$("chatBtn");
+ if(cb){cb.style.display=(state.mode==="online")?"":"none";}
  var mine=(state.mode==="together")||(mySeat===state.turn);
  var canRoll=state.phase==="roll"&&mine&&!(state.mode==="online"&&rollPending);
  $("diceBox").disabled=!canRoll;
@@ -964,18 +1085,138 @@ function renderHud(){
  buildCards();
 }
 function renderAll(){if(!state){return;}renderPawns();renderHud();}
-function beep(freq,dur){
- if(muted){return;}
- ensureAudio();
+// --- Synthesized sound effects (V5.31) ---
+// One shared AudioContext + a master bus (gain 0.9 -> DynamicsCompressor ->
+// destination) so nothing clips and everything is clearly audible on a
+// normal phone speaker. Every effect is synthesized from oscillators and
+// one reused 1s white-noise buffer — no sound files to download, no new
+// Audio object per event. The three user mp3s (sndFirst6 / sndKill /
+// sndHome) stay as persistent <audio> elements, played via playSound.
+// sfx() returns true when the effect was triggered (or would have been:
+// with no AudioContext, e.g. in tests, the intent is still counted in
+// sfxStats.played), false when skipped (muted, volume 0, throttled, or a
+// duplicate trigger within 80ms). Volume always honours settingsVolume()
+// (master x sfx, 0 when muted). AudioContext resume is handled inside
+// ensureAudio / audioBus, so Android's suspended-until-gesture rule is met.
+var sfxStats={played:{},skipped:{}};
+var sfxLast={};
+var sfxLastStep=0;
+var sfxNoiseBuf=null;
+var audioMaster=null, audioSfxBus=null, audioComp=null;
+function audioBus(){
  try{
-  if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();}
-  var o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type="sine"; o.frequency.value=freq;
-  g.gain.setValueAtTime(0.12*settings.master*settings.sfx,audioCtx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start(); o.stop(audioCtx.currentTime+dur);
- }catch(e){}
+  ensureAudio();
+  if(!audioCtx){return null;}
+  if(!audioMaster){
+   audioComp=audioCtx.createDynamicsCompressor();
+   audioComp.threshold.value=-12; audioComp.knee.value=18; audioComp.ratio.value=4;
+   audioComp.attack.value=0.003; audioComp.release.value=0.18;
+   audioComp.connect(audioCtx.destination);
+   audioMaster=audioCtx.createGain(); audioMaster.gain.value=0.9; audioMaster.connect(audioComp);
+   audioSfxBus=audioCtx.createGain(); audioSfxBus.gain.value=1; audioSfxBus.connect(audioMaster);
+  }
+  return audioSfxBus;
+ }catch(e){return null;}
+}
+function sfxTone(o){
+ var bus=audioBus(); if(!bus){return false;}
+ try{
+  var t0=audioCtx.currentTime+(o.delay||0);
+  var osc=audioCtx.createOscillator(), g=audioCtx.createGain();
+  osc.type=o.type||"sine";
+  osc.frequency.setValueAtTime(o.f||440,t0);
+  if(o.f2){osc.frequency.exponentialRampToValueAtTime(Math.max(1,o.f2),t0+o.dur);}
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001,(o.vol||0.3)*settingsVolume()),t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.001,t0+o.dur);
+  osc.connect(g); g.connect(bus);
+  osc.start(t0); osc.stop(t0+o.dur+0.05);
+  return true;
+ }catch(e){return false;}
+}
+function sfxNoise(o){
+ var bus=audioBus(); if(!bus){return false;}
+ try{
+  if(!sfxNoiseBuf){
+   var len=Math.floor(audioCtx.sampleRate);
+   sfxNoiseBuf=audioCtx.createBuffer(1,len,audioCtx.sampleRate);
+   var d=sfxNoiseBuf.getChannelData(0);
+   for(var i=0;i<len;i++){d[i]=Math.random()*2-1;}
+  }
+  var t0=audioCtx.currentTime+(o.delay||0);
+  var src=audioCtx.createBufferSource(); src.buffer=sfxNoiseBuf; src.loop=true;
+  var flt=audioCtx.createBiquadFilter(); flt.type=o.ftype||"bandpass"; flt.frequency.value=o.freq||1800; flt.Q.value=o.q||1;
+  var g=audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.001,(o.vol||0.25)*settingsVolume()),t0+0.006);
+  g.gain.exponentialRampToValueAtTime(0.001,t0+o.dur);
+  src.connect(flt); flt.connect(g); g.connect(bus);
+  src.start(t0); src.stop(t0+o.dur+0.05);
+  return true;
+ }catch(e){return false;}
+}
+var SFX_NAMES=["diceRoll","diceLand","step","tileLand","enterBoard","capture","returnHome","pawnHome","turn","extraTurn","join","leave","button","chat","win","lose"];
+function sfx(name){
+ if(muted){sfxStats.skipped[name]=(sfxStats.skipped[name]||0)+1;return false;}
+ var now=Date.now();
+ // The step tick fires per tile during a glide: throttle to 1 per 90ms.
+ if(name==="step"){
+  if(now-sfxLastStep<90){sfxStats.skipped[name]=(sfxStats.skipped[name]||0)+1;return false;}
+  sfxLastStep=now;
+ }
+ // The same sound twice within 80ms is a duplicate trigger, not a new event.
+ if(sfxLast[name]&&now-sfxLast[name]<80){sfxStats.skipped[name]=(sfxStats.skipped[name]||0)+1;return false;}
+ sfxLast[name]=now;
+ if(settingsVolume()<=0){sfxStats.skipped[name]=(sfxStats.skipped[name]||0)+1;return false;}
+ switch(name){
+  case "diceRoll":
+   sfxNoise({dur:0.09,vol:0.32,freq:2000});
+   sfxNoise({dur:0.09,vol:0.28,freq:1500,delay:0.1});
+   sfxNoise({dur:0.1,vol:0.3,freq:2200,delay:0.2});
+   break;
+  case "diceLand":
+   sfxTone({f:180,f2:90,dur:0.1,type:"sine",vol:0.5});
+   sfxNoise({dur:0.04,vol:0.3,freq:1200,ftype:"highpass"});
+   break;
+  case "step": sfxTone({f:700,dur:0.035,type:"sine",vol:0.16}); break;
+  case "tileLand": sfxTone({f:300,f2:200,dur:0.07,type:"sine",vol:0.3}); break;
+  case "enterBoard":
+   sfxTone({f:320,f2:540,dur:0.1,type:"sine",vol:0.35});
+   sfxNoise({dur:0.05,vol:0.15,freq:2400});
+   break;
+  case "capture":
+   sfxNoise({dur:0.18,vol:0.4,freq:900,ftype:"lowpass"});
+   sfxTone({f:420,f2:120,dur:0.26,type:"triangle",vol:0.4});
+   break;
+  case "returnHome": sfxTone({f:500,f2:820,dur:0.13,type:"sine",vol:0.3}); break;
+  case "pawnHome":
+   sfxTone({f:660,dur:0.08,type:"sine",vol:0.3});
+   sfxTone({f:830,dur:0.08,type:"sine",vol:0.3,delay:0.08});
+   sfxTone({f:990,dur:0.12,type:"sine",vol:0.3,delay:0.16});
+   break;
+  case "turn": sfxTone({f:880,dur:0.09,type:"sine",vol:0.25}); break;
+  case "extraTurn":
+   sfxTone({f:660,dur:0.09,type:"sine",vol:0.3});
+   sfxTone({f:880,dur:0.13,type:"sine",vol:0.3,delay:0.09});
+   break;
+  case "join": sfxTone({f:500,f2:720,dur:0.1,type:"sine",vol:0.3}); break;
+  case "leave": sfxTone({f:420,f2:280,dur:0.14,type:"sine",vol:0.25}); break;
+  case "button": sfxTone({f:1000,dur:0.035,type:"sine",vol:0.2}); break;
+  case "chat": sfxTone({f:920,dur:0.05,type:"sine",vol:0.18}); break;
+  case "win":
+   sfxTone({f:523,dur:0.11,type:"triangle",vol:0.32});
+   sfxTone({f:659,dur:0.11,type:"triangle",vol:0.32,delay:0.11});
+   sfxTone({f:784,dur:0.11,type:"triangle",vol:0.32,delay:0.22});
+   sfxTone({f:1046,dur:0.22,type:"triangle",vol:0.34,delay:0.33});
+   break;
+  case "lose":
+   sfxTone({f:400,dur:0.14,type:"sine",vol:0.28});
+   sfxTone({f:300,dur:0.2,type:"sine",vol:0.26,delay:0.14});
+   break;
+  default: return false;
+ }
+ sfxStats.played[name]=(sfxStats.played[name]||0)+1;
+ return true;
 }
 // --- Central audio manager (V5.30) ---
 // One entry point for every sound. The three mp3s are persistent <audio>
@@ -1055,7 +1296,7 @@ function setQuality(q){
 }
 function setMuted(m){
  muted=!!m;storeSet("ludoMuted",muted?"1":"0");applySettings();
- if(!muted){beep(700,0.06);}
+ if(!muted){sfx("button");}
 }
 function fmtTime(s){
  var m=Math.floor(s/60), ss=s%60;
@@ -1094,13 +1335,14 @@ function turnTick(){
  }
 }
 function newGame(n,mode,names){
- state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,sixStreak:0,diceLog:[],left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
+ state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,diceLog:[],left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
  buildBoard();
  buildPawns();
  renderAll();
  showDice(6,false);
  $("winOverlay").classList.add("hidden");
+ clearChat();
  startTimer();
  resetTurnTimer();
 }
@@ -1122,6 +1364,9 @@ function startGame(){
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
  setBoardOrientation(); // Together mode: unrotated; a rotated board from an earlier online game is reset
  playSound("sndHome"); // game start: the "I'm going to go home" sound
+ boardInAnim();
+ showToast("Match started!");
+ clearChat();
 }
 function computeMovable(){
  var mov=[];
@@ -1136,7 +1381,6 @@ function computeMovable(){
 function nextTurn(){
  if(state&&state.mode==="online"){return;} // the server owns the turn in online games
  do{state.turn=(state.turn+1)%state.n;}while(state.left[state.turn]);
- state.sixStreak=0;
  state.phase="roll";
  state.dice=0;
  state.movable=[];
@@ -1161,29 +1405,16 @@ async function rollDice(){
  $("rollBtn").disabled=true;
  state.dice=rollFairDie();
  showDice(state.dice,true);
+ sfx("diceRoll");
  await sleep(600); // let the cube land before the move phase opens
+ sfx("diceLand");
  setLastRoll(state.turn,state.dice);
  state.rollId=(state.rollId||0)+1;
  // Dice log is still recorded in the state (and broadcast), but the screen
  // shows only the latest roll — no history list below the dice.
  state.diceLog.push({s:state.turn,d:state.dice,r:state.rollId});
  if(state.diceLog.length>30){state.diceLog.shift();}
- if(state.dice===6){state.sixStreak=(state.sixStreak||0)+1;}else{state.sixStreak=0;}
  broadcast();
- beep(520,0.08);
- if(state.sixStreak>=RULES.sixForfeit){
-  // 3 sixes in a row: the turn is forfeited, no move on the 3rd six.
-  state.sixStreak=0;
-  state.movable=[];
-  hudMsg=displayName(state.turn)+" rolled 3 sixes in a row — turn lost!";
-  hudMsgUntil=Date.now()+2500;
-  renderAll();
-  broadcast();
-  await sleep(1400);
-  rolling=false;
-  nextTurn();
-  return;
- }
  if(state.dice===6&&!state.firstSixPlayed){
   state.firstSixPlayed=true;
   playSound("sndFirst6");
@@ -1228,11 +1459,18 @@ async function onTokenTap(p,t){
   if(mySeat!==p){return;}
   var okS=state.movable.some(function(m){return m.p===p&&m.t===t;});
   if(!okS){return;}
+  var telS=$("pawn-"+p+"-"+t);
+  if(telS){telS.classList.add("tap-pick");setTimeout(function(){telS.classList.remove("tap-pick");},150);}
   sendSrv({type:"move",p:p,t:t});
   return;
  }
  var ok=state.movable.some(function(m){return m.p===p&&m.t===t;});
  if(!ok){return;}
+ // A gentle scale nod on the tapped pawn before it moves.
+ var tel=$("pawn-"+p+"-"+t);
+ if(tel){tel.classList.add("tap-pick");}
+ await sleep(120);
+ if(tel){tel.classList.remove("tap-pick");}
  await applyMove(p,t);
 }
 // --- Subtle neon trail (V5.25) ---
@@ -1289,6 +1527,12 @@ async function glidePawn(p,t,fromSt,finalSt){
  var hex=COLORS[col].hex;
  trailClearAll(); // a new move fades out any leftover trail first
  if(fromSt>=0){trailStep(tokenRC(col,fromSt,t),hex);} // the tile the pawn leaves
+ else{
+  // Leaving the yard: a small hop out of home, with the pop sound.
+  el.classList.add("yard-hop");
+  sfx("enterBoard");
+  setTimeout(function(){el.classList.remove("yard-hop");},350);
+ }
  var waypoints=[];
  if(fromSt===-1){
   waypoints.push(tokenRC(col,0,t));
@@ -1300,10 +1544,11 @@ async function glidePawn(p,t,fromSt,finalSt){
   el.style.left=pt.x+"%";
   el.style.top=pt.y+"%";
   trailStep(waypoints[i],hex); // the tile the pawn just reached
-  beep(660,0.05);
+  sfx("step"); // throttled to 1 per 90ms inside sfx()
   await sleep(120);
  }
  trailClearAll(); // the pawn stopped: the last tiles fade out over ~450ms
+ sfx("tileLand");
 }
 function capGlowAt(pt,hex,slow){
  var layer=$("pawnLayer");
@@ -1336,6 +1581,62 @@ function capParticles(pt,hex){
  }
  return out;
 }
+// --- Capture animation (V5.31) ---
+// One shared sequence for Together and Online, ~1.4s total, elegant, no
+// shake or explosions. Phase 1 — impact (0-0.42s): the attacker's bounce,
+// a glow beneath it, every victim flashes, the kill sound + toast fire.
+// Phase 2 — dissolve (0.42-0.87s): victims shrink up into a few colour
+// particles (skipped on Low graphics). Phase 3 — return home (0.87-1.37s):
+// each victim jumps back to its own yard slot and grows back in with a
+// soft glow. `onReturn` (online only) applies the server state between
+// phases 2 and 3, so the victims' new yard positions are the truth.
+async function captureAnim(p,t,victims,finalSt,onReturn){
+ var col=playerSet(state.n)[p];
+ var ag=$("pawn-"+p+"-"+t);
+ var apt=cellPct(tokenRC(col,finalSt,t));
+ var vgs=victims.map(function(v){return $("pawn-"+v.p+"-"+v.t);});
+ playSound("sndKill");
+ sfx("capture");
+ showToast("\uD83D\uDCA5 Captured! Extra turn");
+ var glow1=capGlowAt(apt,COLORS[col].hex,false);
+ if(ag){ag.classList.add("cap-bounce");}
+ vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
+ await sleep(300);
+ if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
+ if(ag){ag.classList.remove("cap-bounce");}
+ vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-flash");}});
+ await sleep(120); // impact pause: the hit reads before the dissolve
+ var parts=[];
+ if(settings.quality!=="low"){
+  victims.forEach(function(v){
+   parts=parts.concat(capParticles(apt,COLORS[playerSet(state.n)[v.p]].hex));
+  });
+ }
+ vgs.forEach(function(vg){if(vg){vg.classList.add("cap-shrink");}});
+ await sleep(450);
+ parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
+ if(onReturn){onReturn();}
+ var glow2s=[];
+ victims.forEach(function(v,i){
+  var vg=vgs[i];
+  var vcol=playerSet(state.n)[v.p];
+  var homePt=cellPct(YARD_SLOTS[vcol][v.t]);
+  if(vg){
+   vg.classList.remove("cap-shrink");
+   vg.classList.add("cap-jump");
+   vg.style.left=homePt.x+"%";
+   vg.style.top=homePt.y+"%";
+   void vg.offsetWidth;
+   vg.classList.remove("cap-jump");
+   vg.classList.add("cap-grow");
+  }
+  glow2s.push(capGlowAt(homePt,COLORS[vcol].hex,true));
+ });
+ sfx("returnHome");
+ await sleep(500);
+ glow2s.forEach(function(g2){if(g2&&g2.parentNode){g2.parentNode.removeChild(g2);}});
+ vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-grow");}});
+}
 async function applyMove(p,t){
  var dice=state.dice;
  var fromSt=state.players[p].steps[t];
@@ -1352,70 +1653,44 @@ async function applyMove(p,t){
   if(victims.length){
    extra=true;
    victims.forEach(function(v){state.players[v.p].steps[v.t]=-1;});
-   playSound("sndKill");
   }
  }
  var won=state.players[p].steps.every(function(x){return x===FINISH;});
  renderHud();
  await glidePawn(p,t,fromSt,finalSt);
- if(victims.length){
-  var ag=$("pawn-"+p+"-"+t);
-  var acol=playerSet(state.n)[p];
-  var apt=cellPct(tokenRC(col,finalSt,t));
-  var vgs=victims.map(function(v){return $("pawn-"+v.p+"-"+v.t);});
-  // Phase 1 — impact (0-0.3s): attacker bounce, glow beneath it, every victim flashes.
-  var glow1=capGlowAt(apt,COLORS[acol].hex,false);
-  if(ag){ag.classList.add("cap-bounce");}
-  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
-  await sleep(300);
-  if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
-  if(ag){ag.classList.remove("cap-bounce");}
-  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-flash");}});
-  // Phase 2 — capture (0.3-0.8s): every victim shrinks upward and dissolves into particles.
-  var parts=[];
-  victims.forEach(function(v){
-   parts=parts.concat(capParticles(apt,COLORS[playerSet(state.n)[v.p]].hex));
-  });
-  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-shrink");}});
-  await sleep(450);
-  parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
-  // Phase 3 — return home (0.8-1.3s): each victim jumps to its own yard slot, scale up, soft glow.
-  var glow2s=[];
-  victims.forEach(function(v,i){
-   var vg=vgs[i];
-   var vcol=playerSet(state.n)[v.p];
-   var homePt=cellPct(YARD_SLOTS[vcol][v.t]);
-   if(vg){
-    vg.classList.remove("cap-shrink");
-    vg.classList.add("cap-jump");
-    vg.style.left=homePt.x+"%";
-    vg.style.top=homePt.y+"%";
-    void vg.offsetWidth;
-    vg.classList.remove("cap-jump");
-    vg.classList.add("cap-grow");
-   }
-   glow2s.push(capGlowAt(homePt,COLORS[vcol].hex,true));
-  });
-  await sleep(500);
-  glow2s.forEach(function(g2){if(g2&&g2.parentNode){g2.parentNode.removeChild(g2);}});
-  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-grow");}});
- }
+ if(victims.length){await captureAnim(p,t,victims,finalSt,null);}
  renderAll();
  if(won){
   state.phase="over";
-  renderHud();
-  beep(880,0.25);
+  renderHud(); // the win card + win sound live here (once, via winHandledFor)
   broadcast();
   return;
  }
- if(extra){state.phase="roll";state.movable=[];renderAll();broadcast();resetTurnTimer();return;}
+ if(finalSt===FINISH){
+  // A pawn reached home: celebrate it — or flag the last pawn left.
+  var finished=state.players[p].steps.filter(function(x){return x===FINISH;}).length;
+  var pel=$("pawn-"+p+"-"+t);
+  if(pel){pel.classList.add("home-bounce");setTimeout(function(){pel.classList.remove("home-bounce");},550);}
+  if(finished===3){showToast("\uD83D\uDD25 Last pawn — finish it!");}
+  else{showToast("\uD83C\uDFE0 Pawn home!");}
+  sfx("pawnHome");
+ }
+ if(extra){
+  state.phase="roll";state.movable=[];renderAll();broadcast();resetTurnTimer();
+  showToast("\uD83C\uDFB2 Extra turn!");
+  sfx("extraTurn");
+  return;
+ }
  nextTurn();
 }
 function confetti(){
  var box=$("confetti");
  box.innerHTML="";
+ // Low graphics: no confetti at all. Balanced: 12 pieces. High: 24.
+ if(settings.quality==="low"){return;}
+ var count=settings.quality==="high"?24:12;
  var cols=COLORS.map(function(c){return c.hex;});
- for(var i=0;i<70;i++){
+ for(var i=0;i<count;i++){
   var d=document.createElement("div");
   d.className="cf";
   d.style.left=(Math.random()*100)+"%";
@@ -1455,7 +1730,7 @@ function updateStart(){
  renderLobby();
 }
 function serialState(){
- return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,sixStreak:state.sixStreak||0,diceLog:(state.diceLog||[]).slice(),left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
+ return {n:state.n,mode:state.mode,turn:state.turn,dice:state.dice,phase:state.phase,movable:state.movable,firstSixPlayed:state.firstSixPlayed,diceLog:(state.diceLog||[]).slice(),left:state.left.slice(),names:(state.names||[]).slice(),gameId:state.gameId,rollId:state.rollId||0,players:state.players.map(function(p){return {steps:p.steps.slice()};})};
 }
 function broadcast(){
  // No-op in V5.20: the room server broadcasts every state change to all
@@ -1468,10 +1743,185 @@ async function guestDiceTumble(target){
  // animation.
  if(diceTumbling){diceTumbleTarget=target;return;}
  diceTumbling=true; diceTumbleTarget=target;
+ sfx("diceRoll");
  showDice(target,true);
  await sleep(600);
- if(diceTumbleTarget!==target){showDice(diceTumbleTarget,true);await sleep(600);}
+ sfx("diceLand");
+ if(diceTumbleTarget!==target){showDice(diceTumbleTarget,true);await sleep(600);sfx("diceLand");}
  diceTumbling=false;
+}
+// --- In-game text chat (V5.31) ---
+// Online matches only. Messages go through the room server, which
+// validates (1..200 chars, 5 per 10s per socket) and relays to the whole
+// room; this client only renders what the server sends, so every player
+// sees the same messages in the same order. Text is rendered with
+// textContent only — never innerHTML — so markup in a message shows as
+// literal text. Messages are live-only: no history is replayed on rejoin.
+// Muted senders persist in localStorage ("ludoMutedChat", JSON array of
+// "seat:name" keys); their messages show as a "hidden — tap to unmute" row.
+var QUICK_MSGS=["Good luck!","Nice move!","Well played!","Watch out!","Your turn!","Haha!","GG!","One more game?"];
+var chatMsgs=[], chatMuted={}, chatOpen=false, chatUnread=0, chatQuickBuilt=false;
+function loadChatMuted(){
+ try{
+  var v=JSON.parse(localStorage.getItem("ludoMutedChat")||"[]");
+  if(Array.isArray(v)){v.forEach(function(k){chatMuted[k]=true;});}
+ }catch(e){}
+}
+function saveChatMuted(){
+ try{localStorage.setItem("ludoMutedChat",JSON.stringify(Object.keys(chatMuted)));}catch(e){}
+}
+function chatKey(seat,name){return seat+":"+(name||"");}
+function chatColorHex(colorName){
+ for(var i=0;i<COLORS.length;i++){if(COLORS[i].name===colorName){return COLORS[i].hex;}}
+ return "#8A7FC0";
+}
+function chatIsMuted(seat,name){return !!chatMuted[chatKey(seat,name)];}
+function toggleChatMute(seat,name){
+ var k=chatKey(seat,name);
+ if(chatMuted[k]){delete chatMuted[k];}else{chatMuted[k]=true;}
+ saveChatMuted();
+ renderChat();
+}
+function chatTimeStr(ts){
+ try{
+  var d=new Date(ts||Date.now());
+  var h=d.getHours(), m=d.getMinutes();
+  return (h<10?"0"+h:h)+":"+(m<10?"0"+m:m);
+ }catch(e){return "";}
+}
+function chatNearBottom(){
+ var list=$("chatList");
+ if(!list){return true;}
+ try{
+  if(typeof list.scrollHeight!=="number"||typeof list.clientHeight!=="number"){return true;}
+  return (list.scrollTop||0)+list.clientHeight>=list.scrollHeight-40;
+ }catch(e){return true;}
+}
+function renderChat(){
+ var list=$("chatList");
+ if(!list){return;}
+ var nearBottom=chatNearBottom();
+ // Clear rows: innerHTML alone does not drop children in every DOM the
+ // game runs against, so remove them explicitly too.
+ while(list._children&&list._children.length){list.removeChild(list._children[0]);}
+ list.innerHTML="";
+ if(!chatMsgs.length){
+  var em=document.createElement("div");
+  em.id="chatEmpty";
+  em.textContent="No messages yet — say good luck!";
+  list.appendChild(em);
+ }
+ chatMsgs.forEach(function(m){
+  if(chatIsMuted(m.seat,m.name)){
+   var mr=document.createElement("div");
+   mr.className="chatMutedRow";
+   mr.textContent="\uD83D\uDD07 Message from "+m.name+" hidden — tap to unmute";
+   mr.addEventListener("click",function(){toggleChatMute(m.seat,m.name);});
+   list.appendChild(mr);
+   return;
+  }
+  var row=document.createElement("div");
+  row.className="chatMsg";
+  var av=document.createElement("div");
+  av.className="chatAv";
+  av.style.background=chatColorHex(m.color);
+  av.textContent=(m.name||"?").charAt(0).toUpperCase();
+  av.title="Tap to mute "+m.name;
+  av.addEventListener("click",function(){toggleChatMute(m.seat,m.name);});
+  var body=document.createElement("div");
+  body.className="chatBody";
+  var meta=document.createElement("div");
+  meta.className="chatMeta";
+  var nm=document.createElement("span");
+  nm.className="chatName"; nm.textContent=m.name;
+  var tm=document.createElement("span");
+  tm.className="chatTime"; tm.textContent=chatTimeStr(m.ts);
+  meta.appendChild(nm); meta.appendChild(tm);
+  var tx=document.createElement("div");
+  tx.className="chatText"; tx.textContent=m.text;
+  body.appendChild(meta); body.appendChild(tx);
+  row.appendChild(av); row.appendChild(body);
+  if(m.seat!==mySeat){
+   var fl=document.createElement("button");
+   fl.className="chatFlag"; fl.textContent="\uD83D\uDEA9"; fl.title="Report message";
+   fl.addEventListener("click",function(){
+    sendSrv({type:"report",text:m.text,from:{seat:m.seat,name:m.name}});
+    fl.disabled=true;
+   });
+   row.appendChild(fl);
+  }
+  list.appendChild(row);
+ });
+ var note=$("chatMutedNote");
+ if(note){
+  var mutedNames=Object.keys(chatMuted).map(function(k){return k.split(":").slice(1).join(":");});
+  note.textContent=mutedNames.length?("Muted: "+mutedNames.join(", ")):"";
+  note.title=mutedNames.length?"Tap to unmute everyone":"";
+ }
+ var nw=$("chatNew");
+ if(nw){
+  if(!nearBottom&&chatMsgs.length){nw.classList.remove("hidden");}
+  else{nw.classList.add("hidden");}
+ }
+ if(nearBottom){
+  try{list.scrollTop=list.scrollHeight;}catch(e){}
+ }
+}
+function clearChat(){
+ chatMsgs=[]; chatUnread=0;
+ var b=$("chatBadge");
+ if(b){b.textContent="0";b.classList.add("hidden");}
+ renderChat();
+}
+function openChat(){
+ chatOpen=true;
+ $("chatPanel").classList.remove("hidden");
+ chatUnread=0;
+ var b=$("chatBadge");
+ if(b){b.textContent="0";b.classList.add("hidden");}
+ renderChat();
+ var inp=$("chatInput");
+ if(inp){inp.focus();}
+}
+function closeChat(){
+ chatOpen=false;
+ $("chatPanel").classList.add("hidden");
+}
+function sendChat(text){
+ text=(text||"").replace(/^\s+|\s+$/g,"");
+ if(!text){return false;}
+ if(!state||state.mode!=="online"||!roomRole){
+  showToast("Chat works in online matches.");
+  return false;
+ }
+ if(text.length>200){showToast("Message is too long — keep it under 200 characters.");return false;}
+ sendSrv({type:"chat",text:text});
+ return true;
+}
+function onChatMsg(m){
+ if(!m||!m.from||typeof m.text!=="string"){return;}
+ var from=m.from;
+ var msg={seat:(typeof from.seat==="number"?from.seat:-1),name:sanitizeName(from.name||"Player"),color:from.color||"",text:m.text,ts:(typeof m.ts==="number"?m.ts:Date.now())};
+ chatMsgs.push(msg);
+ if(chatMsgs.length>50){chatMsgs.splice(0,chatMsgs.length-50);}
+ if(chatOpen){renderChat();}
+ else{
+  chatUnread++;
+  var b=$("chatBadge");
+  if(b){b.textContent=String(chatUnread);b.classList.remove("hidden");}
+ }
+ if(msg.seat!==mySeat){sfx("chat");}
+}
+function buildChatQuick(){
+ var box=$("chatQuick");
+ if(!box||chatQuickBuilt){return;}
+ chatQuickBuilt=true;
+ QUICK_MSGS.forEach(function(q){
+  var c=document.createElement("button");
+  c.className="chatChip"; c.type="button"; c.textContent=q;
+  c.addEventListener("click",function(){sendChat(q);});
+  box.appendChild(c);
+ });
 }
 // The latest roll, in words, for everyone to see: "Alvi rolled 4". It stays
 // until the next roll (mine or an opponent's) and is cleared for a new game.
@@ -1485,7 +1935,7 @@ function applyNetState(s){
  var had=!!state;
  var oldTurn=state?state.turn:-1, oldPhase=state?state.phase:"", oldGame=state?state.gameId:"";
  rollPending=false;
- state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,sixStreak:s.sixStreak||0,diceLog:(s.diceLog||[]).slice(),left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
+ state={n:s.n,mode:s.mode,turn:s.turn,dice:s.dice,phase:s.phase,movable:s.movable,firstSixPlayed:s.firstSixPlayed,diceLog:(s.diceLog||[]).slice(),left:s.left.slice(),names:(s.names||[]).slice(),gameId:s.gameId||"",rollId:s.rollId||0,players:s.players.map(function(p){return {steps:p.steps.slice()};})};
  if(!had){
   $("menu").classList.add("hidden");
   $("lobby").classList.add("hidden");
@@ -1496,18 +1946,20 @@ function applyNetState(s){
   showDice(6,false);
   lastRollId=-1;
   $("winOverlay").classList.add("hidden");
+  boardInAnim();
   if(s.rollId===0){startTimer();} // a fresh game: the match clock runs for everyone
  }else if(s.gameId!==oldGame){
   lastRollId=-1;
   // A new game started (host pressed Play Again): hide the old win card.
   if(s.phase!=="over"){$("winOverlay").classList.add("hidden");}
+  clearChat();
   if(s.rollId===0){startTimer();}
  }
  if(s.rollId===0){setLastRoll(null);}
  if(s.rollId&&s.rollId!==lastRollId&&s.dice>=1&&s.dice<=6){
   lastRollId=s.rollId;
   // Who rolled? The dice log's newest entry (matched by rollId) names the
-  // roller. s.turn alone is wrong after a no-move / three-sixes, where the
+  // roller. s.turn alone is wrong after a no-move, where the
   // turn has already passed to the next player in this same state.
   var lr=(s.diceLog&&s.diceLog.length)?s.diceLog[s.diceLog.length-1]:null;
   setLastRoll((lr&&lr.r===s.rollId)?lr.s:s.turn, s.dice);
@@ -1520,6 +1972,8 @@ function applyNetState(s){
  // dice===0 (turn just passed) deliberately leaves the face alone, so the
  // last rolled number stays visible instead of snapping back to 6.
  renderAll();
+ // My turn, online: a soft chime so I never miss it.
+ if(had&&s.turn!==oldTurn&&s.turn===mySeat&&s.phase!=="over"){sfx("turn");}
  if(!had||s.turn!==oldTurn||s.gameId!==oldGame||(s.phase==="roll"&&oldPhase!=="roll")){resetTurnTimer();}
 }
 
@@ -1527,6 +1981,7 @@ var USER_PLUS_SVG='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" s
 function setLobbyStatus(t){var el=$("lobbyStatus");if(el){el.textContent=t||"";}}
 
 function showLobby(asHost){
+ prevLobbySeats=null; // fresh lobby: the first render sets the baseline silently
  if(typeof asHost==="undefined"){asHost=(roomRole==="host");}
  $("menu").classList.add("hidden");
  $("homeView").classList.add("hidden");
@@ -1574,6 +2029,18 @@ function renderLobby(){
  isHost=amLogicalHost();
  var filled={}, away={};
  srvLobby.forEach(function(p){filled[p.seat]=p.name; away[p.seat]=!p.connected;});
+ // Join/leave feedback: compare with the last lobby we rendered. A seat
+ // filling (not mine) toasts + flashes; a seat emptying toasts.
+ justJoinedSeat=-1;
+ if(prevLobbySeats){
+  for(var seat=0;seat<menuN;seat++){
+   var was=prevLobbySeats[seat], now=filled[seat];
+   if(!was&&now&&seat!==mySeat){justJoinedSeat=seat;showToast(sanitizeName(now)+" joined");sfx("join");}
+   else if(was&&!now){showToast(sanitizeName(was)+" left");sfx("leave");}
+  }
+ }
+ prevLobbySeats={};
+ for(var s2=0;s2<menuN;s2++){if(filled[s2]){prevLobbySeats[s2]=filled[s2];}}
  grid.innerHTML="";
  for(var seat=0;seat<menuN;seat++){
   var ci=playerSet(menuN)[seat];
@@ -1583,6 +2050,7 @@ function renderLobby(){
   var slot=document.createElement("div");
   if(has){
    slot.className="lslot filled";
+   if(seat===justJoinedSeat){slot.classList.add("just-joined");}
    slot.style.background=c.hex+"2E";
    slot.style.borderColor=c.hex+"99";
    var av=document.createElement("div"); av.className="lav"; av.style.background=c.hex;
@@ -1643,7 +2111,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="530";
+var APP_VERSION="531";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -1861,14 +2329,17 @@ function onSrvMsg(m){
    return;
   }
   // In-room error (e.g. a double roll the server rejected): show it,
-  // never fatal — the socket stays open and the game goes on.
+  // never fatal — the socket stays open and the game goes on. Chat
+  // rejections (too long / too fast) go to a toast instead of the HUD.
   if(roomRole){
    rollPending=false;
-   setLobbyStatus(msg);
-   hudMsg=msg; hudMsgUntil=Date.now()+2500; renderAll();
+   if(msg.indexOf("Message is")===0||msg.indexOf("You're sending")===0){showToast(msg);}
+   else{setLobbyStatus(msg);hudMsg=msg;hudMsgUntil=Date.now()+2500;renderAll();}
   }
   return;
  }
+ if(m.type==="chat"){onChatMsg(m);return;}
+ if(m.type==="reported"){showToast("Reported — thanks");return;}
  if(m.type==="left"){
   // We left (bye): the server closes the socket right after. Finish the
   // leave even if the socket is already dead and no "left" ever arrives
@@ -1905,14 +2376,15 @@ function onServerState(m){
 function playNetEventSound(ev){
  if(ev.kind==="start"){playSound("sndHome");} // game start: the "I'm going to go home" sound
  if(ev.firstSix){playSound("sndFirst6");} // roll or no-move: the first 6 of the game
- if(ev.kind==="win"){beep(880,0.25);}
+ // The win/lose sound lives in renderHud (once, via winHandledFor).
 }
 function showNetEventMsg(ev){
- if(ev.kind==="three-sixes"){hudMsg=displayName(ev.seat)+" rolled 3 sixes in a row — turn lost!";hudMsgUntil=Date.now()+2500;}
+ if(ev.kind==="start"){showToast("Match started!");}
  else if(ev.kind==="no-move"){hudMsg=displayName(ev.seat)+" rolled "+ev.dice+" — no move possible, turn passed.";hudMsgUntil=Date.now()+2500;}
  else if(ev.kind==="timeout"){hudMsg=displayName(ev.seat)+" ran out of time — turn passed.";hudMsgUntil=Date.now()+2500;}
- else if(ev.kind==="leave"){hudMsg=displayName(ev.seat)+" left the game.";hudMsgUntil=Date.now()+2500;}
+ else if(ev.kind==="leave"){hudMsg=displayName(ev.seat)+" left the game.";hudMsgUntil=Date.now()+2500;showToast(displayName(ev.seat)+" left");sfx("leave");}
  else if(ev.kind==="abandoned"){hudMsg="Everyone left — game over.";hudMsgUntil=Date.now()+2500;}
+ // "three-sixes" (old servers) is ignored: consecutive sixes are allowed now.
 }
 async function animateNetMove(ev,s){
  // A second state arriving mid-animation waits its turn (moves are
@@ -1923,52 +2395,28 @@ async function animateNetMove(ev,s){
  var fromSt=(state&&state.players[p])?state.players[p].steps[t]:-1;
  var finalSt=ev.steps;
  var col=playerSet(state.n)[p];
- if(ev.kind==="capture"){playSound("sndKill");}
  state.phase="anim"; state.movable=[];
  await glidePawn(p,t,fromSt,finalSt);
  var victims=(ev.kind==="capture")?(ev.victims||(ev.victim?[ev.victim]:[])):[];
  if(victims.length){
-  var ag=$("pawn-"+p+"-"+t);
-  var acol=playerSet(state.n)[p];
-  var apt=cellPct(tokenRC(col,finalSt,t));
-  var vgs=victims.map(function(v){return $("pawn-"+v.p+"-"+v.t);});
-  var glow1=capGlowAt(apt,COLORS[acol].hex,false);
-  if(ag){ag.classList.add("cap-bounce");}
-  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
-  await sleep(300);
-  if(glow1&&glow1.parentNode){glow1.parentNode.removeChild(glow1);}
-  if(ag){ag.classList.remove("cap-bounce");}
-  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-flash");}});
-  var parts=[];
-  victims.forEach(function(v){
-   parts=parts.concat(capParticles(apt,COLORS[playerSet(state.n)[v.p]].hex));
-  });
-  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-shrink");}});
-  await sleep(450);
-  parts.forEach(function(d){if(d.parentNode){d.parentNode.removeChild(d);}});
-  // Apply the new state now: each victim jumps to its own yard slot.
-  applyNetState(s);
-  var glow2s=[];
-  victims.forEach(function(v,i){
-   var vg=vgs[i];
-   var vcol=playerSet(state.n)[v.p];
-   var homePt=cellPct(YARD_SLOTS[vcol][v.t]);
-   if(vg){
-    vg.classList.remove("cap-shrink");
-    vg.classList.add("cap-jump");
-    vg.style.left=homePt.x+"%";
-    vg.style.top=homePt.y+"%";
-    void vg.offsetWidth;
-    vg.classList.remove("cap-jump");
-    vg.classList.add("cap-grow");
-   }
-   glow2s.push(capGlowAt(homePt,COLORS[vcol].hex,true));
-  });
-  await sleep(500);
-  glow2s.forEach(function(g2){if(g2&&g2.parentNode){g2.parentNode.removeChild(g2);}});
-  vgs.forEach(function(vg){if(vg){vg.classList.remove("cap-grow");}});
+  await captureAnim(p,t,victims,finalSt,function(){applyNetState(s);});
  }else{
   applyNetState(s);
+ }
+ // Post-move feedback from the server's event (the state is now applied).
+ // The capture toast already fired inside captureAnim; the win card and
+ // win/lose sound live in renderHud (called by applyNetState).
+ if(ev.kind!=="win"&&ev.kind!=="capture"&&ev.extra){
+  showToast("\uD83C\uDFB2 Extra turn!");
+  sfx("extraTurn");
+ }
+ if(ev.kind!=="win"&&finalSt===FINISH){
+  var fin2=state&&state.players[p]?state.players[p].steps.filter(function(x){return x===FINISH;}).length:0;
+  var pel2=$("pawn-"+p+"-"+t);
+  if(pel2){pel2.classList.add("home-bounce");setTimeout(function(){pel2.classList.remove("home-bounce");},550);}
+  if(fin2===3){showToast("\uD83D\uDD25 Last pawn — finish it!");}
+  else{showToast("\uD83C\uDFE0 Pawn home!");}
+  sfx("pawnHome");
  }
  animatingNet=false;
  if(pendingNetState){
@@ -2027,6 +2475,8 @@ function doLeaveCleanup(){
  closeWsExpect();
  roomRole=null; isHost=false; mySeat=-1;
  srvLobby=[]; serverStatus="";
+ prevLobbySeats=null; justJoinedSeat=-1;
+ clearChat();
  rollPending=false; animatingNet=false; pendingNetState=null;
  restoring=false; reconnecting=false;
  clearRoomSession();
@@ -2244,25 +2694,50 @@ if(typeof window.addEventListener==="function"){
 }
 $("startBtn").addEventListener("click",function(){
  if(menuMode==="online"&&!isHost){return;}
+ sfx("button");
  startGame();
 });
 $("diceBox").addEventListener("click",function(){rollDice();});
 $("rollBtn").addEventListener("click",function(){rollDice();});
-$("againBtn").addEventListener("click",resetGame);
+$("againBtn").addEventListener("click",function(){sfx("button");resetGame();});
 var SPK_ON='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z" fill="#fff" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
 var SPK_OFF='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z" fill="#fff" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>';
 $("muteBtn").innerHTML=SPK_ON;
 $("muteBtn").addEventListener("click",function(){setMuted(!muted);});
 loadSettings();
 applySettings();
-$("setBtn").addEventListener("click",function(){$("setPanel").classList.remove("hidden");});
-$("setClose").addEventListener("click",function(){$("setPanel").classList.add("hidden");});
-$("qLow").addEventListener("click",function(){setQuality("low");});
-$("qBal").addEventListener("click",function(){setQuality("balanced");});
-$("qHigh").addEventListener("click",function(){setQuality("high");});
+$("setBtn").addEventListener("click",function(){sfx("button");$("setPanel").classList.remove("hidden");});
+$("setClose").addEventListener("click",function(){sfx("button");$("setPanel").classList.add("hidden");});
+$("qLow").addEventListener("click",function(){sfx("button");setQuality("low");});
+$("qBal").addEventListener("click",function(){sfx("button");setQuality("balanced");});
+$("qHigh").addEventListener("click",function(){sfx("button");setQuality("high");});
 $("volMaster").addEventListener("input",function(){settings.master=Math.max(0,Math.min(1,parseFloat($("volMaster").value)/100||0));storeSet("ludoMaster",String(settings.master));applySettings();});
 $("volSfx").addEventListener("input",function(){settings.sfx=Math.max(0,Math.min(1,parseFloat($("volSfx").value)/100||0));storeSet("ludoSfx",String(settings.sfx));applySettings();});
 $("muteToggle").addEventListener("click",function(){setMuted(!muted);});
+loadChatMuted();
+buildChatQuick();
+$("chatBtn").addEventListener("click",function(){
+ sfx("button");
+ if(!state||state.mode!=="online"){showToast("Chat works in online matches.");return;}
+ openChat();
+});
+$("chatClose").addEventListener("click",function(){sfx("button");closeChat();});
+$("chatSend").addEventListener("click",function(){
+ var inp=$("chatInput");
+ if(sendChat(inp?inp.value:"")){if(inp){inp.value="";}}
+});
+$("chatInput").addEventListener("keydown",function(e){
+ if(e.key==="Enter"){
+  var inp=$("chatInput");
+  if(sendChat(inp?inp.value:"")){inp.value="";}
+ }
+});
+$("chatNew").addEventListener("click",function(){
+ var list=$("chatList");
+ try{list.scrollTop=list.scrollHeight;}catch(e){}
+ $("chatNew").classList.add("hidden");
+});
+$("chatMutedNote").addEventListener("click",function(){chatMuted={};saveChatMuted();renderChat();});
 document.addEventListener("pointerdown",ensureAudio); // unlock audio on first tap
 function startWith(n){
  menuN=n;menuMode="together";isHost=false;mySeat=-1;roomRole=null;
@@ -2315,7 +2790,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
 })();
 </script>
 </body>
