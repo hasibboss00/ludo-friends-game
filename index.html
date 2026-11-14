@@ -98,8 +98,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
 #chipRow .pcard .nm{font-size:14px}
 #chipRow .pcard .on{font-size:11px;margin-top:2px}
 #boardCol{width:100%;max-width:560px;display:flex;flex-direction:column;align-items:center;gap:14px}
-#boardWrap{width:100%;border-radius:20px;padding:9px;background:linear-gradient(145deg,#F9E08A 0%,#E9BE3C 25%,#A87B14 50%,#F5C542 72%,#8A6D1B 100%);box-shadow:0 30px 60px rgba(0,0,0,.6),0 8px 18px rgba(0,0,0,.55),inset 0 2px 0 rgba(255,255,255,.75),inset 0 -2px 0 rgba(90,60,0,.5),inset 0 0 0 1px rgba(90,60,0,.45)}
+#boardWrap{width:100%;border-radius:20px;padding:9px;background:linear-gradient(145deg,#F9E08A 0%,#E9BE3C 25%,#A87B14 50%,#F5C542 72%,#8A6D1B 100%);box-shadow:0 30px 60px rgba(0,0,0,.6),0 8px 18px rgba(0,0,0,.55),inset 0 2px 0 rgba(255,255,255,.75),inset 0 -2px 0 rgba(90,60,0,.5),inset 0 0 0 1px rgba(90,60,0,.45);position:relative}
 #boardWrap.board-in{animation:boardIn .5s ease}
+/* Genuine 3D board (V5.32): the WebGL canvas covers #board exactly. The
+   DOM board stays in the layout (so the aspect ratio holds) but its
+   pieces are hidden with visibility — never removed — so the DOM board
+   is the instant fallback if WebGL is unavailable. The win overlay sits
+   above the canvas and stays visible. */
+#board3dCanvas{position:absolute;inset:9px;border-radius:14px;z-index:2;display:block;touch-action:manipulation}
+#boardWrap.b3d{padding:0;background:transparent;box-shadow:none}
+#boardWrap.b3d #board3dCanvas{inset:0;border-radius:20px}
+#boardWrap.b3d #board{background:transparent;box-shadow:none}
+#boardWrap.b3d #cells,#boardWrap.b3d .yard,#boardWrap.b3d #centre,#boardWrap.b3d #pawnLayer{visibility:hidden}
 @keyframes boardIn{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
 #board{position:relative;width:100%;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background-color:#FBF7EC;background-image:radial-gradient(120% 120% at 50% 28%,#FFFDF6 0%,rgba(255,253,246,0) 55%),repeating-linear-gradient(118deg,rgba(178,158,108,.08) 0 2px,rgba(178,158,108,0) 2px 11px),repeating-linear-gradient(28deg,rgba(178,158,108,.06) 0 1px,rgba(178,158,108,0) 1px 13px);box-shadow:inset 0 0 0 1px rgba(120,95,40,.18),inset 0 2px 10px rgba(120,95,40,.12),inset 0 0 26px rgba(120,95,40,.16)}
 #cells{position:absolute;inset:0;display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr)}
@@ -886,6 +896,7 @@ function buildBoard(){
   }
   board.appendChild(yd);
  });
+ Board3D.syncStatic();
 }
 function cardEl(seat){
  var ci=playerSet(state.n)[seat];
@@ -929,6 +940,7 @@ function boardRotationK(){
 function setBoardOrientation(){
  var k=boardRotationK();
  boardK=k; boardDeg=k*90;
+ Board3D.setRotation(k);
  var b=$("board");
  if(b){
   b.style.transform=boardDeg?("rotate("+boardDeg+"deg)"):"";
@@ -1043,6 +1055,7 @@ function renderPawns(){
    item.el.classList.toggle("targeted",!!targeted[item.p+"-"+item.t]);
   });
  });
+ Board3D.syncPawns();
 }
 function renderHud(){
  if(!state){return;}
@@ -1085,6 +1098,882 @@ function renderHud(){
  buildCards();
 }
 function renderAll(){if(!state){return;}renderPawns();renderHud();}
+// --- Genuine 3D board (V5.32) ---
+// A Three.js/WebGL view layer over the SAME logical engine. The DOM/CSS
+// board stays fully intact as the fallback: if WebGL is missing, the
+// module fails to load, or init throws, the game plays exactly as V5.31.
+// When active, the WebGL canvas covers #board (the DOM pieces are hidden
+// with visibility, never removed) and every tile, yard, pawn and the
+// centre is a real mesh driven from the same `state` the DOM renderer
+// reads. The dice stays the DOM 3D cube (V5.30) — only the board is 3D.
+// Rendering is on demand: one frame per state/animation change, no
+// continuous loop; tweens drive their own frames while they run.
+// World: 1 unit = 1 board cell. Board spans [-7.5, 7.5] on X (columns)
+// and Z (rows); Y is up. tokenRC's [r,c] maps directly: x = c-7.5,
+// z = r-7.5. The centre [7.5,7.5] maps to the origin (0,0).
+function cellToWorld(rc){return {x:rc[1]-7.5, z:rc[0]-7.5};}
+// The DOM rotates the board with CSS rotate(90*k) (clockwise, y down).
+// The same rotation in world space (Y up, z down-screen) is a Y-axis
+// rotation of -k*90deg: (x,z) -> (-z,x) for k=1, so a player's yard
+// still lands bottom-left exactly like the CSS board.
+function rotateWorldXZ(x,z,k){
+ k=((k%4)+4)%4;
+ if(k===0){return {x:x,z:z};}
+ if(k===1){return {x:-z,z:x};}
+ if(k===2){return {x:-x,z:-z};}
+ return {x:z,z:-x};
+}
+function yardSlotWorld(ci,t){return cellToWorld(YARD_SLOTS[ci][t]);}
+// Pawn rest heights: on a track tile the pawn stands on the tile top
+// (0.14); in a yard it stands on the recessed inner slab (0.32);
+// finished, it stands on the raised centre triangles (0.50).
+function pawnBaseY(rc,steps){
+ if(steps===-1){return 0.32;}
+ if(steps===FINISH){return 0.50;}
+ if(rc&&rc[0]===7.5&&rc[1]===7.5){return 0.50;}
+ return 0.14;
+}
+// DOM stack offsets are % of board width; 1% = 0.15 world units, and the
+// DOM pawn width w% scales the pawn by w/8 (8% is full size).
+function stackWorldOffset(o){return {dx:o.dx*0.15, dz:o.dy*0.15, s:o.w/8};}
+// Where every pawn belongs in the world right now (same grouping as
+// renderPawns: pawns sharing one logical cell split via stackLayout).
+// Returns {"p-t": {x,z,y,s,rc}} — pure, no THREE needed.
+function pawnGroupLayout(){
+ var out={};
+ if(!state){return out;}
+ var groups={};
+ for(var p=0;p<state.n;p++){
+  var ci=playerSet(state.n)[p];
+  for(var t=0;t<4;t++){
+   var st=state.players[p].steps[t];
+   if(st===-2){continue;}
+   var rc=tokenRC(ci,st,t);
+   var key=rc[0]+","+rc[1];
+   groups[key]=groups[key]||[];
+   groups[key].push({p:p,t:t,rc:rc,st:st});
+  }
+ }
+ Object.keys(groups).forEach(function(key){
+  var g=groups[key];
+  var lay=stackLayout(g.length);
+  g.forEach(function(item,idx){
+   var o=stackWorldOffset(lay[idx]||lay[lay.length-1]);
+   var w=cellToWorld(item.rc);
+   out[item.p+"-"+item.t]={x:w.x+o.dx, z:w.z+o.dz, y:pawnBaseY(item.rc,item.st), s:o.s, rc:item.rc};
+  });
+ });
+ return out;
+}
+// Kind of a board cell, for the 3D tile colours (pure, no THREE needed):
+// "yard" | "centre" | "lane:ci" | "start:ci" | "safe" | "ivory".
+function tileKindAt(r,c){
+ if(yardAt(r,c)>=0){return "yard";}
+ if(isCentre(r,c)){return "centre";}
+ var hc=homeAt(r,c);
+ if(hc>=0){return "lane:"+hc;}
+ var ti=-1;
+ for(var i=0;i<52;i++){if(TRACK[i][0]===r&&TRACK[i][1]===c){ti=i;break;}}
+ if(ti>=0&&SAFE[ti]){
+  for(var q=0;q<4;q++){if(START_IDX[q]===ti){return "start:"+q;}}
+  return "safe";
+ }
+ return "ivory";
+}
+var Board3D={
+ active:false, ready:false, failed:false, starting:false,
+ THREE:null, renderer:null, scene:null, camera:null, boardGroup:null,
+ keyLight:null, goldMat:null, hitMat:null, blobMat:null, marbleTex:null,
+ pawnMeshes:{}, blobMeshes:{}, ringMeshes:{}, slotHit:{},
+ yards:[], chevMeshes:[], arrowMeshes:[],
+ tileMesh:null, tileCells:[], trailPool:[], trailActive:[], trailIdx:0,
+ trailOn:true, blobOpacity:0.28, pawnAnim:{}, pawnOverride:{},
+ raycaster:null, pointerV:null, ro:null, flashMesh:null, flashMat:null,
+ particles:[], particleMats:{}, pawnMats:{}, pawnMatsHigh:{},
+ webglOK:function(){
+  try{
+   if(typeof window==="undefined"||!window.WebGLRenderingContext){return false;}
+   var c=document.createElement("canvas");
+   var gl=c.getContext("webgl2")||c.getContext("webgl");
+   return !!gl;
+  }catch(e){return false;}
+ },
+ ensure:function(){
+  if(Board3D.ready||Board3D.failed||Board3D.starting){return;}
+  Board3D.starting=true;
+  Board3D.initAsync().then(function(ok){
+   Board3D.starting=false;
+   if(!ok){Board3D.failed=true;}
+  }).catch(function(){Board3D.starting=false;Board3D.failed=true;});
+ },
+ initAsync:async function(){
+  try{
+   if(!Board3D.webglOK()){return false;}
+   var T=await import("./three.module.min.js");
+   if(!T||!T.Scene||!T.WebGLRenderer){return false;}
+   Board3D.THREE=T;
+   var wrap=$("boardWrap");
+   if(!wrap){return false;}
+   // The game view may still be hidden when the first game starts
+   // (Together startGame builds the board, then unhides the view):
+   // wait briefly for a real size instead of failing at once.
+   var w=0,h=0,tries=0;
+   while(tries<12){
+    w=wrap.clientWidth||0; h=wrap.clientHeight||0;
+    if(w>=50&&h>=50){break;}
+    await sleep(100); tries++;
+   }
+   if(w<50||h<50){Board3D.failed=true;return false;}
+   Board3D.blobOpacity=(settings.quality==="low"?0.42:0.28);
+   Board3D.trailOn=(settings.quality!=="low");
+   var lowQ=(settings.quality==="low");
+   var renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true, powerPreference:"high-performance"});
+   renderer.setPixelRatio(Math.min((typeof window!=="undefined"&&window.devicePixelRatio)?window.devicePixelRatio:1, settings.quality==="high"?2:1.5));
+   renderer.setSize(w,h,false);
+   renderer.shadowMap.enabled=!lowQ;
+   renderer.shadowMap.type=T.PCFSoftShadowMap;
+   renderer.shadowMap.autoUpdate=false;
+   renderer.outputColorSpace=T.SRGBColorSpace;
+   renderer.toneMapping=T.ACESFilmicToneMapping;
+   renderer.toneMappingExposure=1.1;
+   renderer.domElement.id="board3dCanvas";
+   Board3D.renderer=renderer;
+   Board3D.hitMat=new T.MeshBasicMaterial({colorWrite:false, depthWrite:false, transparent:true});
+   Board3D.scene=new T.Scene();
+   Board3D.camera=new T.OrthographicCamera(-8.6,8.6,8.6,-8.6,0.1,60);
+   Board3D.camera.position.set(0,14,6);
+   Board3D.camera.lookAt(0,0,0);
+   Board3D.raycaster=new T.Raycaster();
+   Board3D.pointerV=new T.Vector2();
+   Board3D.marbleTex=Board3D.makeMarble(T);
+   Board3D.buildLights(T);
+   Board3D.buildEnvironment(T);
+   Board3D.buildStatic(T);
+   Board3D.buildPawns3D(T);
+   Board3D.setRotation(boardK);
+   wrap.appendChild(renderer.domElement);
+   renderer.domElement.addEventListener("pointerdown",Board3D.onPointer);
+   if(typeof ResizeObserver!=="undefined"){
+    Board3D.ro=new ResizeObserver(function(){Board3D.resize();});
+    Board3D.ro.observe(wrap);
+   }else if(typeof window!=="undefined"&&window.addEventListener){
+    window.addEventListener("resize",function(){Board3D.resize();});
+   }
+   Board3D.updateCamera();
+   Board3D.ready=true; Board3D.active=true;
+   wrap.classList.add("b3d");
+   Board3D.syncStatic();
+   Board3D.syncPawns();
+   Board3D.requestRender();
+   return true;
+  }catch(e){
+   Board3D.cleanupPartial();
+   return false;
+  }
+ },
+ cleanupPartial:function(){
+  try{
+   if(Board3D.renderer&&Board3D.renderer.domElement&&Board3D.renderer.domElement.parentNode){Board3D.renderer.domElement.parentNode.removeChild(Board3D.renderer.domElement);}
+  }catch(e){}
+  try{var wrap=$("boardWrap"); if(wrap){wrap.classList.remove("b3d");}}catch(e){}
+  Board3D.renderer=null; Board3D.active=false; Board3D.ready=false;
+ },
+ roundedRect:function(Cls,w,h,r){
+  var p=new Cls();
+  var x=-w/2, y=-h/2;
+  p.moveTo(x+r,y);
+  p.lineTo(x+w-r,y);
+  p.absarc(x+w-r,y+r,r,-Math.PI/2,0,false);
+  p.lineTo(x+w,y+h-r);
+  p.absarc(x+w-r,y+h-r,r,0,Math.PI/2,false);
+  p.lineTo(x+r,y+h);
+  p.absarc(x+r,y+h-r,r,Math.PI/2,Math.PI,false);
+  p.lineTo(x,y+r);
+  p.absarc(x+r,y+r,r,Math.PI,Math.PI*1.5,false);
+  return p;
+ },
+ starShape:function(T,outer,inner){
+  var s=new T.Shape();
+  for(var i=0;i<10;i++){
+   var rad=(i%2===0)?outer:inner;
+   var a=-Math.PI/2+i*Math.PI/5;
+   var x=Math.cos(a)*rad, y=Math.sin(a)*rad;
+   if(i===0){s.moveTo(x,y);}else{s.lineTo(x,y);}
+  }
+  s.closePath();
+  return s;
+ },
+ makeMarble:function(T){
+  try{
+   var cv=document.createElement("canvas"); cv.width=256; cv.height=256;
+   var g=cv.getContext("2d"); if(!g){return null;}
+   g.fillStyle="#FBF7EC"; g.fillRect(0,0,256,256);
+   for(var i=0;i<26;i++){
+    g.strokeStyle="rgba(178,158,108,"+(0.05+Math.random()*0.09)+")";
+    g.lineWidth=0.8+Math.random()*1.8;
+    g.beginPath();
+    var x=Math.random()*256, y=Math.random()*256;
+    g.moveTo(x,y);
+    g.bezierCurveTo(x+40-Math.random()*80, y+30-Math.random()*60, x+80-Math.random()*160, y+60-Math.random()*120, x+120-Math.random()*240, y+90-Math.random()*180);
+    g.stroke();
+   }
+   var tex=new T.CanvasTexture(cv);
+   tex.colorSpace=T.SRGBColorSpace;
+   tex.wrapS=tex.wrapT=T.RepeatWrapping;
+   return tex;
+  }catch(e){return null;}
+ },
+ makeBlob:function(T){
+  try{
+   var cv=document.createElement("canvas"); cv.width=128; cv.height=128;
+   var g=cv.getContext("2d"); if(!g){return null;}
+   var gr=g.createRadialGradient(64,64,4,64,64,62);
+   gr.addColorStop(0,"rgba(0,0,0,0.55)"); gr.addColorStop(0.6,"rgba(0,0,0,0.28)"); gr.addColorStop(1,"rgba(0,0,0,0)");
+   g.fillStyle=gr; g.fillRect(0,0,128,128);
+   var tex=new T.CanvasTexture(cv); tex.colorSpace=T.SRGBColorSpace; return tex;
+  }catch(e){return null;}
+ },
+ buildLights:function(T){
+  var hemi=new T.HemisphereLight(0xffffff,0x3A2A55,0.75);
+  Board3D.scene.add(hemi);
+  var key=new T.DirectionalLight(0xFFF1D6,2.6);
+  key.position.set(7,16,5);
+  key.castShadow=(settings.quality!=="low");
+  var sz=(settings.quality==="high")?2048:1024;
+  key.shadow.mapSize.set(sz,sz);
+  key.shadow.camera.left=-9.5; key.shadow.camera.right=9.5;
+  key.shadow.camera.top=9.5; key.shadow.camera.bottom=-9.5;
+  key.shadow.camera.near=2; key.shadow.camera.far=40;
+  key.shadow.bias=-0.0004; key.shadow.normalBias=0.03;
+  Board3D.scene.add(key);
+  Board3D.scene.add(key.target);
+  Board3D.keyLight=key;
+  var fill=new T.DirectionalLight(0xBFD0FF,0.55);
+  fill.position.set(-7,9,-7);
+  Board3D.scene.add(fill);
+ },
+ buildEnvironment:function(T){
+  // A tiny procedural studio for the metals to reflect: bright ceiling
+  // softbox, dark floor, warm + cool side cards. One PMREM pass at init;
+  // if it fails, the lights still carry the look (no env map).
+  try{
+   var pm=new T.PMREMGenerator(Board3D.renderer);
+   var env=new T.Scene();
+   function panel(w,h,color,x,y,z,rx,ry){
+    var m=new T.Mesh(new T.PlaneGeometry(w,h), new T.MeshBasicMaterial({color:color, side:T.DoubleSide}));
+    m.position.set(x,y,z); m.rotation.x=rx||0; m.rotation.y=ry||0; env.add(m);
+   }
+   panel(30,30,0xffffff,0,10,0,Math.PI/2,0);
+   panel(30,30,0x2A1A3A,0,-6,0,-Math.PI/2,0);
+   panel(20,12,0xFFE0B0,-12,4,0,0,Math.PI/2);
+   panel(20,12,0xCFE0FF,12,4,0,0,-Math.PI/2);
+   panel(20,10,0xffffff,0,4,-12,0,0);
+   var rt=pm.fromScene(env,0.08);
+   Board3D.scene.environment=rt.texture;
+   pm.dispose();
+  }catch(e){/* no env map */}
+ },
+ buildStatic:function(T){
+  var g=new T.Group();
+  Board3D.boardGroup=g;
+  Board3D.scene.add(g);
+  // --- physical thickness: dark plinth + base slab under everything ---
+  var plinth=new T.Mesh(new T.BoxGeometry(16.7,0.35,16.7), new T.MeshStandardMaterial({color:0x4A3418, metalness:0.4, roughness:0.6}));
+  plinth.position.y=-0.675; plinth.castShadow=true; plinth.receiveShadow=true; g.add(plinth);
+  var slab=new T.Mesh(new T.BoxGeometry(15.0,0.5,15.0), new T.MeshStandardMaterial({color:0xC9B78A, metalness:0.15, roughness:0.7}));
+  slab.position.y=-0.25; slab.receiveShadow=true; g.add(slab);
+  // --- luxury gold frame: extruded rounded-rect ring with bevels ---
+  var goldMat=new T.MeshStandardMaterial({color:0xD8A93B, metalness:1.0, roughness:0.28, envMapIntensity:1.0});
+  Board3D.goldMat=goldMat;
+  var frameShape=Board3D.roundedRect(T.Shape,16.4,16.4,1.0);
+  frameShape.holes.push(Board3D.roundedRect(T.Path,15.0,15.0,0.4));
+  var frameGeo=new T.ExtrudeGeometry(frameShape,{depth:0.42,bevelEnabled:true,bevelThickness:0.14,bevelSize:0.13,bevelSegments:3,curveSegments:12});
+  var frame=new T.Mesh(frameGeo,goldMat);
+  frame.rotation.x=-Math.PI/2; frame.position.y=0;
+  frame.castShadow=true; frame.receiveShadow=true; g.add(frame);
+  // --- movement tiles: one InstancedMesh, per-instance colour ---
+  Board3D.tileCells=[];
+  for(var r=0;r<15;r++){for(var c=0;c<15;c++){
+   if(yardAt(r,c)>=0||isCentre(r,c)){continue;}
+   Board3D.tileCells.push([r,c]);
+  }}
+  var tileGeo=new T.BoxGeometry(0.92,0.14,0.92);
+  var tileMat=new T.MeshStandardMaterial({map:Board3D.marbleTex, color:0xffffff, metalness:0.05, roughness:0.35, envMapIntensity:0.4});
+  var tiles=new T.InstancedMesh(tileGeo,tileMat,Board3D.tileCells.length);
+  var m4=new T.Matrix4();
+  Board3D.tileCells.forEach(function(rc,i){
+   var w=cellToWorld(rc);
+   m4.makeTranslation(w.x,0.07,w.z);
+   tiles.setMatrixAt(i,m4);
+   tiles.setColorAt(i,new T.Color(0xffffff));
+  });
+  tiles.instanceMatrix.needsUpdate=true;
+  if(tiles.instanceColor){tiles.instanceColor.needsUpdate=true;}
+  tiles.receiveShadow=true;
+  g.add(tiles);
+  Board3D.tileMesh=tiles;
+  // --- safe-square stars: thin extruded stars on the 4 plain safe tiles ---
+  var starGeo=new T.ExtrudeGeometry(Board3D.starShape(T,0.30,0.125),{depth:0.035,bevelEnabled:false});
+  var starMat=new T.MeshStandardMaterial({color:0x6B6455, metalness:0.3, roughness:0.5});
+  var starMesh=new T.InstancedMesh(starGeo,starMat,4);
+  [8,21,34,47].forEach(function(ti,i){
+   var rc=TRACK[ti], w=cellToWorld(rc);
+   var m=new T.Matrix4().makeRotationX(-Math.PI/2);
+   m.setPosition(w.x,0.14,w.z);
+   starMesh.setMatrixAt(i,m);
+  });
+  starMesh.instanceMatrix.needsUpdate=true;
+  g.add(starMesh);
+  // --- entry arrows (ARROWS) + one chevron per home lane (middle tile) ---
+  var arrowShape=new T.Shape();
+  arrowShape.moveTo(-0.30,-0.10); arrowShape.lineTo(0.02,-0.10); arrowShape.lineTo(0.02,-0.24);
+  arrowShape.lineTo(0.34,0); arrowShape.lineTo(0.02,0.24); arrowShape.lineTo(0.02,0.10);
+  arrowShape.lineTo(-0.30,0.10); arrowShape.closePath();
+  var arrowGeo=new T.ExtrudeGeometry(arrowShape,{depth:0.025,bevelEnabled:false});
+  var chevShape=new T.Shape();
+  chevShape.moveTo(-0.14,-0.17); chevShape.lineTo(0.18,0); chevShape.lineTo(-0.14,0.17); chevShape.closePath();
+  var chevGeo=new T.ExtrudeGeometry(chevShape,{depth:0.02,bevelEnabled:false});
+  // Direction angles: → 0, ↓ -90°, ← 180°, ↑ +90° (same order as the DOM
+  // lane chevrons ["▶","▼","◀","▲"] and the ARROWS map).
+  var dirAng=[0,-Math.PI/2,Math.PI,Math.PI/2];
+  Object.keys(ARROWS).forEach(function(key){
+   var parts=key.split(",");
+   var ar=parseInt(parts[0],10), ac=parseInt(parts[1],10);
+   var col=ARROWS[key][1];
+   var am=new T.Mesh(arrowGeo,new T.MeshStandardMaterial({color:COLORS[col].hex, metalness:0.2, roughness:0.5}));
+   var grp=new T.Group();
+   am.rotation.x=-Math.PI/2;
+   grp.add(am);
+   var w=cellToWorld([ar,ac]);
+   grp.position.set(w.x,0.14,w.z);
+   grp.rotation.y=dirAng[col];
+   g.add(grp);
+   Board3D.arrowMeshes.push({grp:grp,col:col});
+  });
+  for(var hc=0;hc<4;hc++){
+   var cm=new T.Mesh(chevGeo,new T.MeshStandardMaterial({color:COLORS[hc].dark, metalness:0.2, roughness:0.5}));
+   var cgrp=new T.Group();
+   cm.rotation.x=-Math.PI/2;
+   cgrp.add(cm);
+   var hw=cellToWorld(HOME[hc][2]);
+   cgrp.position.set(hw.x,0.14,hw.z);
+   cgrp.rotation.y=dirAng[hc];
+   g.add(cgrp);
+   Board3D.chevMeshes.push({grp:cgrp,col:hc});
+  }
+  // --- home bases: raised ring (a real recessed well) + inner slab + slots ---
+  var ringGeo=(function(){
+   var s=Board3D.roundedRect(T.Shape,6,6,0.55);
+   s.holes.push(Board3D.roundedRect(T.Path,4.9,4.9,0.4));
+   return new T.ExtrudeGeometry(s,{depth:0.5,bevelEnabled:true,bevelThickness:0.06,bevelSize:0.06,bevelSegments:2,curveSegments:10});
+  })();
+  var innerGeo=new T.BoxGeometry(4.86,0.14,4.86);
+  var slotDiscGeo=new T.CylinderGeometry(0.37,0.37,0.05,24);
+  var slotRingGeo=new T.TorusGeometry(0.37,0.035,10,28);
+  var slotHitGeo=new T.CircleGeometry(0.62,20);
+  for(var ci=0;ci<4;ci++){
+   var yrc=YARD_RC[ci];
+   var cx=yrc[1]+3-7.5, cz=yrc[0]+3-7.5;
+   var activeMat=new T.MeshStandardMaterial({color:COLORS[ci].hex, metalness:0.35, roughness:0.32, envMapIntensity:0.7});
+   var neutralMat=new T.MeshStandardMaterial({color:0x2E2658, metalness:0.2, roughness:0.6, envMapIntensity:0.3});
+   var ring=new T.Mesh(ringGeo,activeMat);
+   ring.rotation.x=-Math.PI/2; ring.position.set(cx,0,cz);
+   ring.castShadow=true; ring.receiveShadow=true; g.add(ring);
+   var innerActive=new T.MeshStandardMaterial({color:0xFFFDF5, metalness:0.05, roughness:0.4, envMapIntensity:0.3});
+   var innerNeutral=new T.MeshStandardMaterial({color:0x221B40, metalness:0.1, roughness:0.6});
+   var inner=new T.Mesh(innerGeo,innerActive);
+   inner.position.set(cx,0.25,cz); inner.receiveShadow=true; g.add(inner);
+   var discMat=new T.MeshStandardMaterial({color:COLORS[ci].dark, metalness:0.3, roughness:0.5});
+   var torusMat=new T.MeshStandardMaterial({color:COLORS[ci].hex, metalness:0.6, roughness:0.3, envMapIntensity:0.8});
+   var slots=[];
+   for(var t=0;t<4;t++){
+    var sw=cellToWorld(YARD_SLOTS[ci][t]);
+    var disc=new T.Mesh(slotDiscGeo,discMat);
+    disc.position.set(sw.x,0.29,sw.z); disc.receiveShadow=true; g.add(disc);
+    var tor=new T.Mesh(slotRingGeo,torusMat);
+    tor.rotation.x=Math.PI/2; tor.position.set(sw.x,0.325,sw.z); g.add(tor);
+    var hit=new T.Mesh(slotHitGeo,Board3D.hitMat);
+    hit.rotation.x=-Math.PI/2; hit.position.set(sw.x,0.36,sw.z);
+    hit.userData={ci:ci, t:t};
+    g.add(hit);
+    Board3D.slotHit[ci+"-"+t]=hit;
+    slots.push({disc:disc,tor:tor,hit:hit});
+   }
+   Board3D.yards.push({ci:ci,ring:ring,inner:inner,activeMat:activeMat,neutralMat:neutralMat,innerActive:innerActive,innerNeutral:innerNeutral,slots:slots,cx:cx,cz:cz});
+  }
+  // --- raised centre: platform + 4 triangles + gold star ---
+  var plat=new T.Mesh(new T.BoxGeometry(3,0.35,3), new T.MeshStandardMaterial({color:0xEFE7D2, metalness:0.1, roughness:0.5, envMapIntensity:0.3}));
+  plat.position.y=0.175; plat.castShadow=true; plat.receiveShadow=true; g.add(plat);
+  var triCols=[1,2,3,0]; // top Emerald, right Gold, bottom Sapphire, left Crimson (DOM conic order)
+  var triVerts=[
+   [[-1.5,1.5],[1.5,1.5],[0,0]],
+   [[1.5,-1.5],[1.5,1.5],[0,0]],
+   [[-1.5,-1.5],[1.5,-1.5],[0,0]],
+   [[-1.5,-1.5],[-1.5,1.5],[0,0]]
+  ];
+  triCols.forEach(function(ci2,idx){
+   var sh=new T.Shape();
+   sh.moveTo(triVerts[idx][0][0],triVerts[idx][0][1]);
+   sh.lineTo(triVerts[idx][1][0],triVerts[idx][1][1]);
+   sh.lineTo(triVerts[idx][2][0],triVerts[idx][2][1]);
+   sh.closePath();
+   var tg=new T.ExtrudeGeometry(sh,{depth:0.12,bevelEnabled:true,bevelThickness:0.015,bevelSize:0.015,bevelSegments:1});
+   var tm=new T.Mesh(tg,new T.MeshStandardMaterial({color:COLORS[ci2].hex, metalness:0.3, roughness:0.35, envMapIntensity:0.6}));
+   tm.rotation.x=-Math.PI/2;
+   tm.position.y=0.35+idx*0.01;
+   tm.castShadow=true; tm.receiveShadow=true; g.add(tm);
+  });
+  var starS=Board3D.starShape(T,0.26,0.11);
+  var starG=new T.ExtrudeGeometry(starS,{depth:0.05,bevelEnabled:false});
+  var star=new T.Mesh(starG,new T.MeshStandardMaterial({color:0xFFD54F, metalness:0.9, roughness:0.3, envMapIntensity:1.0}));
+  star.rotation.x=-Math.PI/2; star.position.y=0.49; g.add(star);
+ },
+ buildPawns3D:function(T){
+  var g=Board3D.boardGroup;
+  // Lathe profile: wide base disc -> tapered body -> neck -> round head.
+  var pts=[[0.001,0],[0.30,0],[0.36,0.03],[0.36,0.07],[0.30,0.11],[0.24,0.18],[0.19,0.38],[0.155,0.52],[0.13,0.60],[0.135,0.66],[0.17,0.70],[0.205,0.76],[0.21,0.82],[0.185,0.89],[0.13,0.94],[0.06,0.97],[0.001,0.98]].map(function(pt){return new T.Vector2(pt[0],pt[1]);});
+  var geo=new T.LatheGeometry(pts,24);
+  Board3D.pawnGeo=geo;
+  for(var ci=0;ci<4;ci++){
+   Board3D.pawnMats[ci]=new T.MeshStandardMaterial({color:COLORS[ci].hex, metalness:0.55, roughness:0.25, envMapIntensity:0.8});
+   Board3D.pawnMatsHigh[ci]=new T.MeshPhysicalMaterial({color:COLORS[ci].hex, metalness:0.55, roughness:0.22, clearcoat:0.7, clearcoatRoughness:0.25, envMapIntensity:0.9});
+  }
+  var blobTex=Board3D.makeBlob(T);
+  var blobMat=blobTex
+   ? new T.MeshBasicMaterial({map:blobTex, transparent:true, opacity:Board3D.blobOpacity, depthWrite:false})
+   : new T.MeshBasicMaterial({color:0x000000, transparent:true, opacity:Board3D.blobOpacity*0.7, depthWrite:false});
+  Board3D.blobMat=blobMat;
+  var blobGeo=new T.PlaneGeometry(0.95,0.95);
+  var hitGeo=new T.CylinderGeometry(0.55,0.55,1.35,10);
+  for(var p=0;p<4;p++){
+   for(var t=0;t<4;t++){
+    var key=p+"-"+t;
+    var mesh=new T.Mesh(geo,Board3D.pawnMats[0]);
+    mesh.castShadow=true;
+    mesh.userData={p:p,t:t,ci:0};
+    var hit=new T.Mesh(hitGeo,Board3D.hitMat);
+    hit.position.y=0.62;
+    mesh.add(hit);
+    mesh.visible=false;
+    g.add(mesh);
+    Board3D.pawnMeshes[key]=mesh;
+    var blob=new T.Mesh(blobGeo,blobMat);
+    blob.rotation.x=-Math.PI/2;
+    blob.visible=false;
+    g.add(blob);
+    Board3D.blobMeshes[key]=blob;
+    var ringMat=new T.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.95, side:T.DoubleSide, depthWrite:false});
+    var ring=new T.Mesh(new T.RingGeometry(0.40,0.55,32),ringMat);
+    ring.rotation.x=-Math.PI/2;
+    ring.visible=false;
+    g.add(ring);
+    Board3D.ringMeshes[key]=ring;
+    Board3D.pawnAnim[key]={s:1,y:0};
+   }
+  }
+  // Trail rings (pool of 3) + capture flash ring.
+  for(var i=0;i<3;i++){
+   var tm=new T.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0, side:T.DoubleSide, depthWrite:false});
+   var tr=new T.Mesh(new T.RingGeometry(0.30,0.46,32),tm);
+   tr.rotation.x=-Math.PI/2; tr.visible=false;
+   g.add(tr);
+   Board3D.trailPool.push({mesh:tr, mat:tm, fading:false, gen:0});
+  }
+  var fm=new T.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0, side:T.DoubleSide, depthWrite:false});
+  var fr=new T.Mesh(new T.RingGeometry(0.34,0.62,32),fm);
+  fr.rotation.x=-Math.PI/2; fr.visible=false;
+  g.add(fr);
+  Board3D.flashMesh=fr; Board3D.flashMat=fm;
+  // Capture particles (pool of 28, one shared material per colour).
+  var pGeo=new T.SphereGeometry(0.07,8,6);
+  for(var c2=0;c2<4;c2++){
+   Board3D.particleMats[c2]=new T.MeshBasicMaterial({color:COLORS[c2].hex, transparent:true, opacity:1});
+  }
+  for(var j=0;j<28;j++){
+   var pm=new T.Mesh(pGeo,Board3D.particleMats[0]);
+   pm.visible=false;
+   g.add(pm);
+   Board3D.particles.push(pm);
+  }
+ },
+ updateCamera:function(){
+  if(!Board3D.camera||!Board3D.renderer){return;}
+  var size=Board3D.renderer.getSize(new Board3D.THREE.Vector2());
+  var aspect=size.x/Math.max(1,size.y);
+  var halfH=8.6;
+  Board3D.camera.left=-halfH*aspect; Board3D.camera.right=halfH*aspect;
+  Board3D.camera.top=halfH; Board3D.camera.bottom=-halfH;
+  Board3D.camera.updateProjectionMatrix();
+ },
+ resize:function(){
+  if(!Board3D.renderer){return;}
+  var wrap=$("boardWrap");
+  if(!wrap){return;}
+  var w=wrap.clientWidth||0, h=wrap.clientHeight||0;
+  if(w<50||h<50){return;}
+  Board3D.renderer.setSize(w,h,false);
+  Board3D.updateCamera();
+  Board3D.requestRender();
+ },
+ requestRender:function(){
+  if(!Board3D.renderer||!Board3D.scene||!Board3D.camera){return;}
+  try{
+   Board3D.renderer.shadowMap.needsUpdate=true;
+   Board3D.renderer.render(Board3D.scene,Board3D.camera);
+  }catch(e){}
+ },
+ tween:function(dur,fn){
+  return new Promise(function(res){
+   var raf=(typeof window!=="undefined"&&window.requestAnimationFrame)?window.requestAnimationFrame:function(f){return setTimeout(function(){f(Date.now());},16);};
+   var nowF=function(){return (typeof performance!=="undefined"&&performance.now)?performance.now():Date.now();};
+   var t0=nowF();
+   function step(now){
+    var u=Math.min(1,(now-t0)/dur);
+    try{fn(u);}catch(e){}
+    Board3D.requestRender();
+    if(u<1){raf(step);}else{res();}
+   }
+   raf(step);
+  });
+ },
+ syncStatic:function(){
+  Board3D.ensure();
+  if(!Board3D.ready){return;}
+  var T=Board3D.THREE;
+  var active={};
+  if(state){playerSet(state.n).forEach(function(ci){active[ci]=true;});}
+  else{playerSet(4).forEach(function(ci){active[ci]=true;});}
+  if(Board3D.tileMesh){
+   var col=new T.Color();
+   Board3D.tileCells.forEach(function(rc,i){
+    var kind=tileKindAt(rc[0],rc[1]);
+    var hex="#FBF7EC";
+    if(kind.indexOf("lane:")===0){
+     var ci=parseInt(kind.slice(5),10);
+     hex=active[ci]?COLORS[ci].hex:"#2A2547";
+    }else if(kind.indexOf("start:")===0){
+     var ci2=parseInt(kind.slice(6),10);
+     hex=active[ci2]?COLORS[ci2].light:"#FBF7EC";
+    }
+    col.set(hex);
+    Board3D.tileMesh.setColorAt(i,col);
+   });
+   if(Board3D.tileMesh.instanceColor){Board3D.tileMesh.instanceColor.needsUpdate=true;}
+  }
+  Board3D.yards.forEach(function(y){
+   var on=!!active[y.ci];
+   y.ring.material=on?y.activeMat:y.neutralMat;
+   y.inner.material=on?y.innerActive:y.innerNeutral;
+   y.slots.forEach(function(s){s.disc.visible=on;s.tor.visible=on;s.hit.visible=on;});
+  });
+  (Board3D.chevMeshes||[]).forEach(function(c){c.grp.visible=!!active[c.col];});
+  (Board3D.arrowMeshes||[]).forEach(function(a){a.grp.visible=!!active[a.col];});
+  Board3D.requestRender();
+ },
+ placePawn:function(key,x,y,z,s,baseY){
+  var mesh=Board3D.pawnMeshes[key];
+  if(!mesh){return;}
+  mesh.position.set(x,y,z);
+  mesh.scale.set(s,s,s);
+  var blob=Board3D.blobMeshes[key];
+  if(blob){blob.position.set(x,(baseY||0.14)+0.006,z); blob.scale.set(s,s,s);}
+  var ring=Board3D.ringMeshes[key];
+  if(ring){ring.position.set(x,(baseY||0.14)+0.012,z); ring.scale.set(s,s,s);}
+ },
+ syncPawns:function(){
+  if(!Board3D.active){return;}
+  var lay=pawnGroupLayout();
+  // Capture rings mirror renderPawns exactly (same movable/cap logic).
+  var capMap={}, targeted={};
+  if(state&&state.phase==="move"&&state.movable){
+   state.movable.forEach(function(m){
+    var from=state.players[m.p].steps[m.t];
+    var dest=(from===-1)?0:from+state.dice;
+    if(dest<0||dest>50){return;}
+    var col=playerSet(state.n)[m.p];
+    var abs=(START_IDX[col]+dest)%52;
+    var vs=findVictims(abs,m.p);
+    if(vs.length){
+     capMap[m.p+"-"+m.t]=vs;
+     vs.forEach(function(v){targeted[v.p+"-"+v.t]=true;});
+    }
+   });
+  }
+  for(var p=0;p<4;p++){
+   for(var t=0;t<4;t++){
+    var key=p+"-"+t;
+    var mesh=Board3D.pawnMeshes[key];
+    if(!mesh){continue;}
+    var L=lay[key];
+    var ring=Board3D.ringMeshes[key];
+    var blob=Board3D.blobMeshes[key];
+    if(!L||!state||p>=state.n){
+     mesh.visible=false;
+     if(blob){blob.visible=false;}
+     if(ring){ring.visible=false;}
+     continue;
+    }
+    var ci=playerSet(state.n)[p];
+    mesh.material=(settings.quality==="high")?Board3D.pawnMatsHigh[ci]:Board3D.pawnMats[ci];
+    mesh.userData.ci=ci;
+    mesh.visible=true;
+    if(blob){blob.visible=true;}
+    var anim=Board3D.pawnAnim[key]||{s:1,y:0};
+    var ov=Board3D.pawnOverride[key];
+    if(ov&&Math.abs(ov.x-L.x)<0.02&&Math.abs(ov.z-L.z)<0.02){delete Board3D.pawnOverride[key]; ov=null;}
+    var x=ov?ov.x:L.x, z=ov?ov.z:L.z;
+    var y=(ov&&ov.y!==undefined?ov.y:L.y)+anim.y;
+    var s=L.s*anim.s;
+    Board3D.placePawn(key,x,y,z,s,L.y);
+    if(ring){
+     var isT=!!targeted[key], isC=!!capMap[key];
+     var mov=state.phase==="move"&&state.movable&&state.turn===p&&state.movable.some(function(m){return m.p===p&&m.t===t;});
+     if(isT){ring.visible=true; ring.material.color.set(0xFF3B30);}
+     else if(isC){ring.visible=true; ring.material.color.set(COLORS[ci].hex);}
+     else if(mov){ring.visible=true; ring.material.color.set(0xffffff);}
+     else{ring.visible=false;}
+    }
+   }
+  }
+  Board3D.requestRender();
+ },
+ trailStep3D:function(rc,hex){
+  if(!Board3D.active||!Board3D.trailOn){return;}
+  var w=cellToWorld(rc);
+  var by=pawnBaseY(rc,0);
+  var ring=Board3D.trailPool[Board3D.trailIdx%Board3D.trailPool.length];
+  Board3D.trailIdx++;
+  ring.gen=(ring.gen||0)+1;
+  ring.mat.color.set(hex);
+  ring.mesh.position.set(w.x,by+0.012,w.z);
+  ring.mesh.visible=true;
+  ring.mat.opacity=0.85;
+  ring.fading=false;
+  Board3D.trailActive.push(ring);
+  while(Board3D.trailActive.length>3){
+   Board3D.fadeTrailRing(Board3D.trailActive.shift());
+  }
+  Board3D.requestRender();
+ },
+ fadeTrailRing:function(ring){
+  if(!ring||ring.fading){return;}
+  ring.fading=true;
+  var o0=ring.mat.opacity, g0=ring.gen;
+  Board3D.tween(450,function(u){if(ring.gen===g0){ring.mat.opacity=o0*(1-u);}}).then(function(){
+   if(ring.gen!==g0){return;}
+   ring.mesh.visible=false; ring.fading=false;
+   var i=Board3D.trailActive.indexOf(ring);
+   if(i>=0){Board3D.trailActive.splice(i,1);}
+  });
+ },
+ trailClear3D:function(){
+  while(Board3D.trailActive.length){Board3D.fadeTrailRing(Board3D.trailActive.shift());}
+ },
+ flashRing:function(x,z,hex,dur,baseY){
+  if(!Board3D.active||!Board3D.flashMesh){return;}
+  var m=Board3D.flashMesh, mat=Board3D.flashMat;
+  mat.color.set(hex);
+  m.position.set(x,(baseY||0.14)+0.012,z);
+  m.visible=true;
+  mat.opacity=0.9;
+  Board3D.tween(dur||300,function(u){mat.opacity=0.9*(1-u);}).then(function(){m.visible=false;});
+ },
+ spawnParticles:function(apt,victims){
+  var out=[];
+  var angles=[0,51,103,154,206,257,309];
+  var used=0;
+  victims.forEach(function(v){
+   var ci=playerSet(state.n)[v.p];
+   for(var i=0;i<7&&used<Board3D.particles.length;i++,used++){
+    var pm=Board3D.particles[used];
+    pm.material=Board3D.particleMats[ci];
+    var a=angles[i]*Math.PI/180;
+    pm.position.set(apt.x,0.3,apt.z);
+    pm.scale.set(1,1,1);
+    pm.visible=true;
+    out.push({mesh:pm, x0:apt.x, z0:apt.z, dx:Math.cos(a)*0.9, dz:Math.sin(a)*0.9});
+   }
+  });
+  return out;
+ },
+ updateParticles:function(parts,u){
+  parts.forEach(function(pt){
+   pt.mesh.position.set(pt.x0+pt.dx*u, 0.3+Math.sin(u*Math.PI)*0.45, pt.z0+pt.dz*u);
+   var s=Math.max(0.05,1-u*0.7);
+   pt.mesh.scale.set(s,s,s);
+  });
+ },
+ hideParticles:function(parts){
+  parts.forEach(function(pt){pt.mesh.visible=false;});
+ },
+ glide:async function(p,t,fromSt,finalSt){
+  var key=p+"-"+t;
+  var mesh=Board3D.pawnMeshes[key];
+  if(!mesh||!state){return;}
+  var col=playerSet(state.n)[p];
+  var hex=COLORS[col].hex;
+  var sc0=mesh.scale.x||1;
+  Board3D.trailClear3D();
+  if(fromSt>=0){Board3D.trailStep3D(tokenRC(col,fromSt,t),hex);}
+  else{
+   // Leaving the yard: a small hop out of home, with the pop sound.
+   sfx("enterBoard");
+   var bx=mesh.position.x, bz=mesh.position.z, by=mesh.position.y;
+   await Board3D.tween(320,function(u){
+    var s=1+0.18*Math.sin(u*Math.PI);
+    mesh.scale.set(sc0*s,sc0*s,sc0*s);
+    mesh.position.y=by+0.35*Math.sin(u*Math.PI);
+   });
+   mesh.position.y=by;
+   mesh.scale.set(sc0,sc0,sc0);
+  }
+  var waypoints=[];
+  if(fromSt===-1){waypoints.push(tokenRC(col,0,t));}
+  else{for(var s=fromSt+1;s<=finalSt;s++){waypoints.push(tokenRC(col,s,t));}}
+  for(var i=0;i<waypoints.length;i++){
+   var rc=waypoints[i];
+   var w=cellToWorld(rc);
+   var y=pawnBaseY(rc,0);
+   var fx=mesh.position.x, fz=mesh.position.z, fy=mesh.position.y;
+   var sc=mesh.scale.x||sc0;
+   await Board3D.tween(110,function(u){
+    var e=u*u*(3-2*u);
+    var nx=fx+(w.x-fx)*e, nz=fz+(w.z-fz)*e, ny=fy+(y-fy)*e;
+    var lift=0.28*Math.sin(e*Math.PI);
+    Board3D.pawnOverride[key]={x:nx,z:nz,y:ny};
+    Board3D.placePawn(key,nx,ny+lift,nz,sc,y);
+   });
+   Board3D.pawnOverride[key]={x:w.x,z:w.z,y:y};
+   Board3D.placePawn(key,w.x,y,w.z,sc,y);
+   Board3D.trailStep3D(rc,hex);
+   sfx("step");
+   await sleep(10);
+  }
+  Board3D.trailClear3D();
+  sfx("tileLand");
+ },
+ captureVisual:async function(p,t,victims,finalSt,onReturn){
+  var key=p+"-"+t;
+  var col=playerSet(state.n)[p];
+  var apt=cellToWorld(tokenRC(col,finalSt,t));
+  var ag=Board3D.pawnMeshes[key];
+  if(!ag){if(onReturn){onReturn();}return;}
+  var scA=ag.scale.x||1;
+  var vInfo=victims.map(function(v,i){
+   var vk=v.p+"-"+v.t;
+   var vm=Board3D.pawnMeshes[vk];
+   var off=(i-(victims.length-1)/2)*0.36;
+   return {key:vk, p:v.p, mesh:vm, sc:(vm?vm.scale.x||1:1), ox:apt.x+off, oz:apt.z};
+  });
+  // Phase 1 — impact (0-300ms): attacker hop + glow ring + victim pulse.
+  Board3D.flashRing(apt.x,apt.z,COLORS[col].hex,300,0.14);
+  await Board3D.tween(300,function(u){
+   var s=1+0.15*Math.sin(u*Math.PI);
+   Board3D.placePawn(key,apt.x,0.14+0.22*Math.sin(u*Math.PI),apt.z,scA*s,0.14);
+   vInfo.forEach(function(vi){
+    if(!vi.mesh){return;}
+    var vs=1+0.10*Math.sin(u*Math.PI);
+    Board3D.placePawn(vi.key,vi.ox,0.14,vi.oz,vi.sc*vs,0.14);
+   });
+  });
+  Board3D.placePawn(key,apt.x,0.14,apt.z,scA,0.14);
+  vInfo.forEach(function(vi){if(vi.mesh){Board3D.placePawn(vi.key,vi.ox,0.14,vi.oz,vi.sc,0.14);}});
+  await sleep(120); // impact pause: the hit reads before the dissolve
+  // Phase 2 — dissolve (450ms): victims shrink away in colour particles.
+  var parts=Board3D.spawnParticles(apt,victims);
+  await Board3D.tween(450,function(u){
+   vInfo.forEach(function(vi){
+    if(!vi.mesh){return;}
+    Board3D.placePawn(vi.key,vi.ox,0.14,vi.oz,Math.max(0.001,vi.sc*(1-u)),0.14);
+   });
+   Board3D.updateParticles(parts,u);
+  });
+  Board3D.hideParticles(parts);
+  // Phase 3 — return home (500ms): victims grow back at their yard slots.
+  // Scale is forced to 0 BEFORE the state applies, so no frame ever
+  // shows a victim full-size at its yard slot.
+  vInfo.forEach(function(vi){Board3D.pawnAnim[vi.key]={s:0,y:0};});
+  if(onReturn){onReturn();}
+  Board3D.syncPawns();
+  var homeL={};
+  vInfo.forEach(function(vi){
+   homeL[vi.key]=pawnGroupLayout()[vi.key];
+   if(homeL[vi.key]){
+    Board3D.placePawn(vi.key,homeL[vi.key].x,homeL[vi.key].y,homeL[vi.key].z,0.001,homeL[vi.key].y);
+    Board3D.flashRing(homeL[vi.key].x,homeL[vi.key].z,COLORS[playerSet(state.n)[vi.p]].hex,500,homeL[vi.key].y);
+   }
+  });
+  sfx("returnHome");
+  await Board3D.tween(400,function(u){
+   var e=1-Math.pow(1-u,3);
+   vInfo.forEach(function(vi){
+    var L=homeL[vi.key];
+    if(!L){return;}
+    Board3D.placePawn(vi.key,L.x,L.y,L.z,Math.max(0.001,L.s*e),L.y);
+   });
+  });
+  await sleep(100);
+  vInfo.forEach(function(vi){Board3D.pawnAnim[vi.key]={s:1,y:0};});
+  Board3D.syncPawns();
+ },
+ setRotation:function(k){
+  if(!Board3D.boardGroup){return;}
+  Board3D.boardGroup.rotation.y=-k*Math.PI/2;
+  Board3D.requestRender();
+ },
+ applyQuality:function(q){
+  if(!Board3D.ready){return;}
+  var dpr=(typeof window!=="undefined"&&window.devicePixelRatio)?window.devicePixelRatio:1;
+  Board3D.renderer.setPixelRatio(Math.min(dpr, q==="high"?2:(q==="low"?1:1.5)));
+  var shadows=(q!=="low");
+  Board3D.renderer.shadowMap.enabled=shadows;
+  if(Board3D.keyLight){
+   Board3D.keyLight.castShadow=shadows;
+   if(shadows){
+    var sz=(q==="high")?2048:1024;
+    var sm=Board3D.keyLight.shadow;
+    if(sm.mapSize.x!==sz){sm.mapSize.set(sz,sz); if(sm.map){sm.map.dispose(); sm.map=null;}}
+   }
+  }
+  for(var k2 in Board3D.pawnMeshes){
+   var m=Board3D.pawnMeshes[k2];
+   if(m&&typeof m.userData.ci==="number"){
+    m.material=(q==="high")?Board3D.pawnMatsHigh[m.userData.ci]:Board3D.pawnMats[m.userData.ci];
+   }
+  }
+  Board3D.blobOpacity=(q==="low"?0.42:0.28);
+  if(Board3D.blobMat){Board3D.blobMat.opacity=Board3D.blobOpacity;}
+  Board3D.trailOn=(q!=="low");
+  Board3D.resize();
+  Board3D.requestRender();
+ },
+ onPointer:function(e){
+  if(!Board3D.active||!Board3D.renderer||!Board3D.raycaster){return;}
+  var canvas=Board3D.renderer.domElement;
+  var rect=null;
+  try{rect=canvas.getBoundingClientRect();}catch(err){return;}
+  if(!rect||!rect.width||!rect.height){return;}
+  var nx=((e.clientX-rect.left)/rect.width)*2-1;
+  var ny=-((e.clientY-rect.top)/rect.height)*2+1;
+  Board3D.pointerV.set(nx,ny);
+  Board3D.raycaster.setFromCamera(Board3D.pointerV,Board3D.camera);
+  var targets=[];
+  Object.keys(Board3D.pawnMeshes).forEach(function(k){var m=Board3D.pawnMeshes[k];if(m.visible){targets.push(m);}});
+  Object.keys(Board3D.slotHit).forEach(function(k){var m=Board3D.slotHit[k];if(m.visible){targets.push(m);}});
+  var hits=Board3D.raycaster.intersectObjects(targets,true);
+  for(var i=0;i<hits.length;i++){
+   var o=hits[i].object, ud=o.userData||{};
+   if(ud.p===undefined&&o.parent){ud=o.parent.userData||{};}
+   if(ud.p!==undefined&&ud.t!==undefined){onTokenTap(ud.p,ud.t);return;}
+   // Yard slots store their colour index (the seat depends on n):
+   // resolve the seat at tap time.
+   if(ud.ci!==undefined&&ud.t!==undefined&&state){
+    var seat=playerSet(state.n).indexOf(ud.ci);
+    if(seat>=0){onTokenTap(seat,ud.t);return;}
+   }
+  }
+ }
+};
 // --- Synthesized sound effects (V5.31) ---
 // One shared AudioContext + a master bus (gain 0.9 -> DynamicsCompressor ->
 // destination) so nothing clips and everything is clearly audible on a
@@ -1289,6 +2178,7 @@ function applySettings(){
  if(mt){mt.textContent=muted?"On":"Off";mt.classList.toggle("sel",muted);}
  var mb=$("muteBtn");
  if(mb){mb.innerHTML=muted?SPK_OFF:SPK_ON;}
+ Board3D.applyQuality(settings.quality);
 }
 function setQuality(q){
  if(q!=="low"&&q!=="balanced"&&q!=="high"){return;}
@@ -1361,6 +2251,7 @@ function startGame(){
  $("lobby").classList.add("hidden");
  $("homeView").classList.add("hidden");
  $("game").classList.remove("hidden");
+ Board3D.ensure(); // the board is visible now: WebGL can size the canvas
  if(audioCtx&&audioCtx.resume){audioCtx.resume();}
  setBoardOrientation(); // Together mode: unrotated; a rotated board from an earlier online game is reset
  playSound("sndHome"); // game start: the "I'm going to go home" sound
@@ -1466,11 +2357,14 @@ async function onTokenTap(p,t){
  }
  var ok=state.movable.some(function(m){return m.p===p&&m.t===t;});
  if(!ok){return;}
- // A gentle scale nod on the tapped pawn before it moves.
+ // A gentle scale nod on the tapped pawn before it moves (DOM board
+ // only — the 3D board nods inside its own glide).
  var tel=$("pawn-"+p+"-"+t);
- if(tel){tel.classList.add("tap-pick");}
- await sleep(120);
- if(tel){tel.classList.remove("tap-pick");}
+ if(!Board3D.active){
+  if(tel){tel.classList.add("tap-pick");}
+  await sleep(120);
+  if(tel){tel.classList.remove("tap-pick");}
+ }
  await applyMove(p,t);
 }
 // --- Subtle neon trail (V5.25) ---
@@ -1521,6 +2415,7 @@ function trailStep(rc,hex){
  while(trailCells.length>3){trailClear(trailCells.shift());}
 }
 async function glidePawn(p,t,fromSt,finalSt){
+ if(Board3D.active){return Board3D.glide(p,t,fromSt,finalSt);}
  var el=$("pawn-"+p+"-"+t);
  if(!el){return;}
  var col=playerSet(state.n)[p];
@@ -1598,6 +2493,7 @@ async function captureAnim(p,t,victims,finalSt,onReturn){
  playSound("sndKill");
  sfx("capture");
  showToast("\uD83D\uDCA5 Captured! Extra turn");
+ if(Board3D.active){await Board3D.captureVisual(p,t,victims,finalSt,onReturn);return;}
  var glow1=capGlowAt(apt,COLORS[col].hex,false);
  if(ag){ag.classList.add("cap-bounce");}
  vgs.forEach(function(vg){if(vg){vg.classList.add("cap-flash");}});
@@ -1943,6 +2839,7 @@ function applyNetState(s){
   buildBoard();
   buildPawns();
   setBoardOrientation(); // the board appears rotated for this player's seat
+  Board3D.ensure();
   showDice(6,false);
   lastRollId=-1;
   $("winOverlay").classList.add("hidden");
@@ -2111,7 +3008,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="531";
+var APP_VERSION="532";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -2790,7 +3687,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,cellToWorld:cellToWorld,rotateWorldXZ:rotateWorldXZ,yardSlotWorld:yardSlotWorld,pawnGroupLayout:pawnGroupLayout,tileKindAt:tileKindAt,get renderer3D(){return Board3D.active?"webgl":"dom";},get board3D(){return Board3D;},get use3D(){return Board3D.active;},sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
 })();
 </script>
 </body>
