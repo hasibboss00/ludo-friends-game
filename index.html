@@ -1182,6 +1182,7 @@ function tileKindAt(r,c){
 }
 var Board3D={
  active:false, ready:false, failed:false, starting:false,
+ failReason:null, failError:"", lastAttempt:0, attempts:0,
  THREE:null, renderer:null, scene:null, camera:null, boardGroup:null,
  keyLight:null, goldMat:null, hitMat:null, blobMat:null, marbleTex:null,
  pawnMeshes:{}, blobMeshes:{}, ringMeshes:{}, slotHit:{},
@@ -1190,6 +1191,15 @@ var Board3D={
  trailOn:true, blobOpacity:0.28, pawnAnim:{}, pawnOverride:{},
  raycaster:null, pointerV:null, ro:null, flashMesh:null, flashMat:null,
  particles:[], particleMats:{}, pawnMats:{}, pawnMatsHigh:{},
+ // Fit the whole board (plinth half-width 8.35, projected vertical
+ // half-extent ~8.1) inside the frustum at any canvas aspect, with a
+ // real margin: horizontal half-width = halfH*aspect >= 8.55 and
+ // vertical halfH >= 8.1. The board sits slightly smaller than the
+ // V5.32 fixed 8.6 frustum — that margin is the fix, not a bug.
+ fitHalfH:function(aspect){
+  if(!aspect||!(aspect>0)){aspect=1;}
+  return Math.max(9.2, 8.9/aspect);
+ },
  webglOK:function(){
   try{
    if(typeof window==="undefined"||!window.WebGLRenderingContext){return false;}
@@ -1199,21 +1209,35 @@ var Board3D={
   }catch(e){return false;}
  },
  ensure:function(){
-  if(Board3D.ready||Board3D.failed||Board3D.starting){return;}
+  if(Board3D.ready||Board3D.starting){return;}
+  if(Board3D.failed){
+   // A failed init may be retried on a later game start, but not in a
+   // tight loop: at most one re-attempt per 30s.
+   if(Board3D.lastAttempt&&Date.now()-Board3D.lastAttempt<30000){return;}
+  }
+  Board3D.failed=false; Board3D.failReason=null; Board3D.failError="";
+  Board3D.lastAttempt=Date.now();
+  Board3D.attempts=(Board3D.attempts||0)+1;
   Board3D.starting=true;
   Board3D.initAsync().then(function(ok){
    Board3D.starting=false;
    if(!ok){Board3D.failed=true;}
-  }).catch(function(){Board3D.starting=false;Board3D.failed=true;});
+  }).catch(function(e){Board3D.starting=false;Board3D.failed=true; if(!Board3D.failReason){Board3D.failReason="init-threw"; Board3D.failError=String((e&&e.message)||e||"");}});
  },
  initAsync:async function(){
   try{
-   if(!Board3D.webglOK()){return false;}
-   var T=await import("./three.module.min.js");
-   if(!T||!T.Scene||!T.WebGLRenderer){return false;}
+   if(!Board3D.webglOK()){Board3D.failReason="no-webgl"; return false;}
+   // One retry on import failure: a network hiccup must not kill 3D
+   // for the whole session.
+   var T=null, importErr=null;
+   for(var att=0; att<2 && !T; att++){
+    try{T=await import("./three.module.min.js");}
+    catch(e){importErr=e; if(att===0){await sleep(400);}}
+   }
+   if(!T||!T.Scene||!T.WebGLRenderer){Board3D.failReason="import-failed"; Board3D.failError=importErr?String(importErr.message||importErr):""; return false;}
    Board3D.THREE=T;
    var wrap=$("boardWrap");
-   if(!wrap){return false;}
+   if(!wrap){Board3D.failReason="init-threw"; Board3D.failError="no boardWrap"; return false;}
    // The game view may still be hidden when the first game starts
    // (Together startGame builds the board, then unhides the view):
    // wait briefly for a real size instead of failing at once.
@@ -1223,11 +1247,16 @@ var Board3D={
     if(w>=50&&h>=50){break;}
     await sleep(100); tries++;
    }
-   if(w<50||h<50){Board3D.failed=true;return false;}
+   if(w<50||h<50){Board3D.failReason="too-small"; return false;}
    Board3D.blobOpacity=(settings.quality==="low"?0.42:0.28);
    Board3D.trailOn=(settings.quality!=="low");
    var lowQ=(settings.quality==="low");
-   var renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true, powerPreference:"high-performance"});
+   // Renderer: high-performance preference first, plain defaults as a
+   // fallback — some in-app browsers reject the preference outright.
+   var renderer=null, rendererErr=null;
+   try{renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true, powerPreference:"high-performance"});}
+   catch(e){rendererErr=e; try{renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true});}catch(e2){rendererErr=e2;}}
+   if(!renderer){Board3D.failReason="init-threw"; Board3D.failError=String((rendererErr&&rendererErr.message)||rendererErr||"renderer failed"); return false;}
    renderer.setPixelRatio(Math.min((typeof window!=="undefined"&&window.devicePixelRatio)?window.devicePixelRatio:1, settings.quality==="high"?2:1.5));
    renderer.setSize(w,h,false);
    renderer.shadowMap.enabled=!lowQ;
@@ -1240,7 +1269,8 @@ var Board3D={
    Board3D.renderer=renderer;
    Board3D.hitMat=new T.MeshBasicMaterial({colorWrite:false, depthWrite:false, transparent:true});
    Board3D.scene=new T.Scene();
-   Board3D.camera=new T.OrthographicCamera(-8.6,8.6,8.6,-8.6,0.1,60);
+   var aspect0=w/Math.max(1,h), hh0=Board3D.fitHalfH(aspect0);
+   Board3D.camera=new T.OrthographicCamera(-hh0*aspect0,hh0*aspect0,hh0,-hh0,0.1,60);
    Board3D.camera.position.set(0,14,6);
    Board3D.camera.lookAt(0,0,0);
    Board3D.raycaster=new T.Raycaster();
@@ -1268,12 +1298,17 @@ var Board3D={
    return true;
   }catch(e){
    Board3D.cleanupPartial();
+   if(!Board3D.failReason){Board3D.failReason="init-threw"; Board3D.failError=String((e&&e.message)||e||"");}
    return false;
   }
  },
  cleanupPartial:function(){
   try{
-   if(Board3D.renderer&&Board3D.renderer.domElement&&Board3D.renderer.domElement.parentNode){Board3D.renderer.domElement.parentNode.removeChild(Board3D.renderer.domElement);}
+   var cv=Board3D.renderer&&Board3D.renderer.domElement;
+   if(cv){
+    if(cv.parentNode){cv.parentNode.removeChild(cv);}
+    else{var wrapC=$("boardWrap"); if(wrapC&&wrapC.removeChild){try{wrapC.removeChild(cv);}catch(e){}}}
+   }
   }catch(e){}
   try{var wrap=$("boardWrap"); if(wrap){wrap.classList.remove("b3d");}}catch(e){}
   Board3D.renderer=null; Board3D.active=false; Board3D.ready=false;
@@ -1600,7 +1635,7 @@ var Board3D={
   if(!Board3D.camera||!Board3D.renderer){return;}
   var size=Board3D.renderer.getSize(new Board3D.THREE.Vector2());
   var aspect=size.x/Math.max(1,size.y);
-  var halfH=8.6;
+  var halfH=Board3D.fitHalfH(aspect);
   Board3D.camera.left=-halfH*aspect; Board3D.camera.right=halfH*aspect;
   Board3D.camera.top=halfH; Board3D.camera.bottom=-halfH;
   Board3D.camera.updateProjectionMatrix();
@@ -3008,7 +3043,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="532";
+var APP_VERSION="533";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -3687,7 +3722,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  var saved=readRoomSession();
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
-window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,cellToWorld:cellToWorld,rotateWorldXZ:rotateWorldXZ,yardSlotWorld:yardSlotWorld,pawnGroupLayout:pawnGroupLayout,tileKindAt:tileKindAt,get renderer3D(){return Board3D.active?"webgl":"dom";},get board3D(){return Board3D;},get use3D(){return Board3D.active;},sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
+window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,cellToWorld:cellToWorld,rotateWorldXZ:rotateWorldXZ,yardSlotWorld:yardSlotWorld,pawnGroupLayout:pawnGroupLayout,tileKindAt:tileKindAt,get renderer3D(){return Board3D.active?"webgl":"dom";},get board3D(){return Board3D;},fitHalfH:Board3D.fitHalfH,get board3dFailed(){return Board3D.failed;},get board3dError(){return Board3D.failReason?(Board3D.failReason+(Board3D.failError?": "+Board3D.failError:"")):"";},get use3D(){return Board3D.active;},sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
 })();
 </script>
 </body>
