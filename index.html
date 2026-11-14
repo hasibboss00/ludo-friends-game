@@ -107,7 +107,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;co
    above the canvas and stays visible. */
 #board3dCanvas{position:absolute;inset:9px;border-radius:14px;z-index:2;display:block;touch-action:manipulation}
 #boardWrap.b3d{padding:0;background:transparent;box-shadow:none}
-#boardWrap.b3d #board3dCanvas{inset:0;border-radius:20px}
+#boardWrap.b3d #board3dCanvas{inset:0;width:100%;height:100%;border-radius:20px}
 #boardWrap.b3d #board{background:transparent;box-shadow:none}
 #boardWrap.b3d #cells,#boardWrap.b3d .yard,#boardWrap.b3d #centre,#boardWrap.b3d #pawnLayer{visibility:hidden}
 @keyframes boardIn{0%{opacity:0;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
@@ -1257,8 +1257,8 @@ var Board3D={
    try{renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true, powerPreference:"high-performance"});}
    catch(e){rendererErr=e; try{renderer=new T.WebGLRenderer({antialias:!lowQ, alpha:true});}catch(e2){rendererErr=e2;}}
    if(!renderer){Board3D.failReason="init-threw"; Board3D.failError=String((rendererErr&&rendererErr.message)||rendererErr||"renderer failed"); return false;}
-   renderer.setPixelRatio(Math.min((typeof window!=="undefined"&&window.devicePixelRatio)?window.devicePixelRatio:1, settings.quality==="high"?2:1.5));
-   renderer.setSize(w,h,false);
+   renderer.setPixelRatio(Math.min((typeof window!=="undefined"&&window.devicePixelRatio)?window.devicePixelRatio:1, settings.quality==="high"?2:(settings.quality==="low"?1:1.5)));
+   renderer.setSize(w,h,true); // updateStyle=true: pin the canvas CSS size to the wrap — this phone WebView lets the pixel buffer size leak into the layout size
    renderer.shadowMap.enabled=!lowQ;
    renderer.shadowMap.type=T.PCFSoftShadowMap;
    renderer.shadowMap.autoUpdate=false;
@@ -1646,7 +1646,7 @@ var Board3D={
   if(!wrap){return;}
   var w=wrap.clientWidth||0, h=wrap.clientHeight||0;
   if(w<50||h<50){return;}
-  Board3D.renderer.setSize(w,h,false);
+  Board3D.renderer.setSize(w,h,true); // pin the canvas CSS size to the wrap (see initAsync)
   Board3D.updateCamera();
   Board3D.requestRender();
  },
@@ -3044,7 +3044,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="534";
+var APP_VERSION="535";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -3724,7 +3724,7 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
 window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,cellToWorld:cellToWorld,rotateWorldXZ:rotateWorldXZ,yardSlotWorld:yardSlotWorld,pawnGroupLayout:pawnGroupLayout,tileKindAt:tileKindAt,get renderer3D(){return Board3D.active?"webgl":"dom";},get board3D(){return Board3D;},fitHalfH:Board3D.fitHalfH,get board3dFailed(){return Board3D.failed;},get board3dError(){return Board3D.failReason?(Board3D.failReason+(Board3D.failError?": "+Board3D.failError:"")):"";},get use3D(){return Board3D.active;},sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
-// TEMPORARY DIAGNOSTIC (V5.34): on-screen layout readout, only with ?diag=1 in the URL. Removed before the final fix ships.
+// Hidden diagnostic: on-screen layout readout, only with ?diag=1 in the URL. Invisible in normal play; kept for debugging the phone fit.
 try{
  if(typeof location!=="undefined"&&(location.search||"").indexOf("diag=1")>=0&&typeof document!=="undefined"&&document.createElement&&document.body){
   var diagEl=document.createElement("div");
