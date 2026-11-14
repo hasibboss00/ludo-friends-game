@@ -2261,6 +2261,7 @@ function turnTick(){
 }
 function newGame(n,mode,names){
  state={n:n,mode:mode,turn:0,dice:0,phase:"roll",movable:[],firstSixPlayed:false,diceLog:[],left:[],names:(names||[]).slice(),gameId:Date.now()+"-"+Math.floor(Math.random()*1e6),rollId:0,players:[]};
+ setLastRoll(null); // clear the previous match's "X rolled N" line (V5.34: it persisted into the new match)
  for(var p=0;p<n;p++){state.players.push({steps:[-1,-1,-1,-1]});state.left.push(false);}
  buildBoard();
  buildPawns();
@@ -3043,7 +3044,7 @@ function copyText(txt,done){
 // get THIS build, not a stale copy their phone cached (an old cached build
 // can sit on "Joining…" forever — the 45s watchdog only exists in V5.9+).
 // Bump on every release.
-var APP_VERSION="533";
+var APP_VERSION="534";
 // --- Room server transport (V5.20) ---
 // Online rooms live on the room server (wss://ludo-room-server-r92b.onrender.com),
 // not in any player's tab. The server is the authority: it holds the room and
@@ -3723,6 +3724,27 @@ document.querySelectorAll(".modeCard").forEach(function(card){
  if(saved&&saved.code){restoreSavedRoom(saved);}
 })();
 window.__ludo={get state(){return state;},set state(v){state=v;},get mySeat(){return mySeat;},get boardDeg(){return boardDeg;},get boardK(){return boardK;},setBoardOrientation:setBoardOrientation,get clientId(){return CLIENT_ID;},COLORS:COLORS,TRACK:TRACK,FINISH:FINISH,playerSet:playerSet,startGame:startGame,startWith:startWith,newGame:newGame,rollDice:rollDice,glidePawn:glidePawn,applyMove:applyMove,onTokenTap:onTokenTap,computeMovable:computeMovable,buildBoard:buildBoard,renderAll:renderAll,tokenRC:tokenRC,nextTurn:nextTurn,goSetup:goSetup,showHome:showHome,sanitizeName:sanitizeName,displayName:displayName,renderTopPlayers:renderTopPlayers,recordWin:recordWin,renderLobby:renderLobby,showLobby:showLobby,leaveRoom:leaveRoom,resetTurnTimer:resetTurnTimer,stopTurnTimer:stopTurnTimer,turnTick:turnTick,get turnLeft(){return turnLeft;},get roomRole(){return roomRole;},get reconnecting(){return reconnecting;},get ws(){return ws;},get srvLobby(){return srvLobby;},get serverStatus(){return serverStatus;},get serverUrl(){return ROOM_SERVER_URL;},get isHost(){return isHost;},get joining(){return joining;},get restoring(){return restoring;},get leaving(){return leaving;},get rollPending(){return rollPending;},rollFairDie:rollFairDie,inviteLink:inviteLink,saveRoomSession:saveRoomSession,readRoomSession:readRoomSession,clearRoomSession:clearRoomSession,restoreSavedRoom:restoreSavedRoom,startRestore:startRestore,createRoom:createRoom,joinRoom:joinRoom,sendSrv:sendSrv,onSrvMsg:onSrvMsg,onServerState:onServerState,amLogicalHost:amLogicalHost,failJoin:failJoin,get settings(){return settings;},get muted(){return muted;},setQuality:setQuality,setMuted:setMuted,applySettings:applySettings,stackLayout:stackLayout,trailLight:trailLight,showDice:showDice,DICE_ROT:DICE_ROT,playSound:playSound,ensureAudio:ensureAudio,sfx:sfx,SFX_NAMES:SFX_NAMES,get sfxStats(){return sfxStats;},showToast:showToast,boardInAnim:boardInAnim,captureAnim:captureAnim,cellToWorld:cellToWorld,rotateWorldXZ:rotateWorldXZ,yardSlotWorld:yardSlotWorld,pawnGroupLayout:pawnGroupLayout,tileKindAt:tileKindAt,get renderer3D(){return Board3D.active?"webgl":"dom";},get board3D(){return Board3D;},fitHalfH:Board3D.fitHalfH,get board3dFailed(){return Board3D.failed;},get board3dError(){return Board3D.failReason?(Board3D.failReason+(Board3D.failError?": "+Board3D.failError:"")):"";},get use3D(){return Board3D.active;},sendChat:sendChat,onChatMsg:onChatMsg,renderChat:renderChat,openChat:openChat,closeChat:closeChat,toggleChatMute:toggleChatMute,chatIsMuted:chatIsMuted,get chatMsgs(){return chatMsgs;},get chatMuted(){return chatMuted;},get chatOpen(){return chatOpen;},get chatUnread(){return chatUnread;},QUICK_MSGS:QUICK_MSGS};
+// TEMPORARY DIAGNOSTIC (V5.34): on-screen layout readout, only with ?diag=1 in the URL. Removed before the final fix ships.
+try{
+ if(typeof location!=="undefined"&&(location.search||"").indexOf("diag=1")>=0&&typeof document!=="undefined"&&document.createElement&&document.body){
+  var diagEl=document.createElement("div");
+  diagEl.id="diagReadout";
+  diagEl.style.cssText="position:fixed;left:4px;top:4px;z-index:9999;max-width:96vw;background:rgba(0,0,0,.85);color:#0f0;font:11px/1.5 monospace;white-space:pre-wrap;word-break:break-all;padding:6px 8px;border-radius:6px;pointer-events:none";
+  document.body.appendChild(diagEl);
+  window.__ludoDiag=function(){
+   try{
+    var L=window.__ludo||{}, B=L.board3D||{}, w=$("boardWrap"), c=$("board3dCanvas");
+    var wr=w?w.getBoundingClientRect():null, cr=c?c.getBoundingClientRect():null;
+    var rs=null, cam=null;
+    try{var s=B.renderer&&B.renderer.getSize(new B.THREE.Vector2()); rs=s?Math.round(s.x)+"x"+Math.round(s.y):"-";}catch(e){rs="err";}
+    try{var cm=B.camera; cam=cm?cm.left.toFixed(1)+".."+cm.right.toFixed(1)+" / "+cm.top.toFixed(1):"-";}catch(e){cam="err";}
+    diagEl.textContent="W"+window.innerWidth+"x"+window.innerHeight+" dpr"+window.devicePixelRatio+" q="+(L.settings?L.settings.quality:"?")+" 3D:"+(L.renderer3D||"?")+" fail:"+(L.board3dFailed?"Y":"n")+"\nwrap "+(wr?Math.round(wr.x)+","+Math.round(wr.y)+" "+Math.round(wr.width)+"x"+Math.round(wr.height):"-")+" | cvs "+(cr?Math.round(cr.x)+","+Math.round(cr.y)+" "+Math.round(cr.width)+"x"+Math.round(cr.height):"-")+" attr "+(c?c.width+"x"+c.height:"-")+"\nrnd "+rs+" | cam "+cam+" | docW "+document.documentElement.scrollWidth;
+   }catch(e){ diagEl.textContent="diag err "+e.message; }
+  };
+  window.__ludoDiag();
+  setInterval(window.__ludoDiag,500);
+ }
+}catch(e){}
 })();
 </script>
 </body>
